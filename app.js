@@ -219,12 +219,27 @@ async function loadTeacherClasses(){
   if(error){teacherMessage("班級載入失敗："+error.message,true);const sel=$("prompt-class-select");if(sel)sel.replaceChildren(new Option("班級載入失敗，請重新整理", ""));return;}
   teacherClasses=data||[];
   renderPromptClassOptions();
-  $("teacher-classes").innerHTML=teacherClasses.length?teacherClasses.map(c=>`<div class="teacher-class"><h3>${escapeHtml(c.name)}</h3><p>邀請碼：<strong>${escapeHtml(c.join_code)}</strong></p><div class="teacher-actions"><button class="small" data-teacher-class="${c.id}">查看學生</button><button class="small secondary" data-copy-code="${c.id}">複製邀請碼</button></div></div>`).join(""):'<p class="muted">目前沒有建立的班級。可以在上方新增班級，並將邀請碼提供給學生。</p>';
+  $("teacher-classes").innerHTML=teacherClasses.length?teacherClasses.map(c=>`<div class="teacher-class"><h3>${escapeHtml(c.name)}</h3><p>邀請碼：<strong>${escapeHtml(c.join_code)}</strong></p><div class="teacher-actions"><button class="small" data-teacher-class="${c.id}">查看學生</button><button class="small secondary" data-copy-code="${c.id}">複製邀請碼</button><button class="small danger" data-delete-class="${c.id}">刪除班級</button></div></div>`).join(""):'<p class="muted">目前沒有建立的班級。可以在上方新增班級，並將邀請碼提供給學生。</p>';
   document.querySelectorAll("[data-teacher-class]").forEach(b=>b.addEventListener("click",()=>showTeacherClass(b.dataset.teacherClass)));
+  document.querySelectorAll("[data-delete-class]").forEach(b=>b.addEventListener("click",()=>deleteTeacherClass(b.dataset.deleteClass)));
   document.querySelectorAll("[data-copy-code]").forEach(b=>b.addEventListener("click",async()=>{
     const c=teacherClasses.find(x=>x.id===b.dataset.copyCode);
     if(c){try{await navigator.clipboard.writeText(c.join_code);teacherMessage("已複製邀請碼");}catch{teacherMessage("請手動複製邀請碼："+c.join_code);}}
   }));
+}
+async function deleteTeacherClass(classId){
+ const c=teacherClasses.find(x=>x.id===classId);
+ if(!c||!currentUser){teacherMessage("找不到班級，請重新載入。",true);return;}
+ const typed=window.prompt(`確定刪除「${c.name}」？\n班級成員關聯及班級 Prompt 將移除，學生專題和對話保留。\n請輸入完整班級名稱確認：`);
+ if(typed===null)return;
+ if(typed!==c.name){teacherMessage("名稱不符，已取消刪除。",true);return;}
+ const btn=document.querySelector(`[data-delete-class="${classId}"]`);
+ if(btn)btn.disabled=true;
+ const {data,error}=await db.from("inquiry_classes").delete().eq("id",classId).eq("teacher_id",currentUser.id).select("id");
+ if(error){teacherMessage("刪除失敗："+error.message,true);if(btn)btn.disabled=false;return;}
+ if(!data?.length){teacherMessage("未刪除任何班級，請檢查 RLS 權限。",true);if(btn)btn.disabled=false;return;}
+ teacherMessage(`已刪除班級「${c.name}」；學生專題和對話仍保留。`);
+ await loadTeacherClasses();
 }
 let promptStageDrafts={};
 function renderPromptClassOptions(){

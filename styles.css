@@ -24,3 +24,5 @@ button,input,textarea{font:inherit}button{border:0;border-radius:10px;padding:11
 .chat-history-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:10px 0}.chat-history-tools select{margin-left:8px}.chat-sharing{margin:10px 0;font-size:.9rem}.chat-stage-label{display:block;opacity:.75;font-size:.75rem;margin-bottom:5px}.teacher-chat-results{max-height:480px;overflow:auto}.teacher-chat-item{padding:10px 0;border-bottom:1px solid #d9e3eb;overflow-wrap:anywhere}.teacher-chat-item p{white-space:pre-wrap}
 
 .teacher-prompt-editor{margin:22px 0;padding:20px;border:1px solid var(--border,#ccd6de);border-radius:14px}.teacher-prompt-editor label{display:block;margin:12px 0}.teacher-prompt-editor textarea,.teacher-prompt-editor select{display:block;width:100%;margin-top:7px;box-sizing:border-box}.teacher-prompt-editor input[type=checkbox]{width:auto}
+
+.teacher-actions .danger{background:#fff0f0;color:#9b1c1c;border:1px solid #d88}.teacher-actions .danger:hover{background:#ffe1e1}.teacher-actions .danger:disabled{opacity:.55;cursor:wait}
