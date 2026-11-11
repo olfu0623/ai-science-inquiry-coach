@@ -218,6 +218,7 @@ async function loadTeacherClasses(){
   const {data,error}=await db.from("inquiry_classes").select("id,name,join_code,created_at").order("created_at",{ascending:false});
   if(error){teacherMessage("尚未讀取到教師班級。請確認已執行 teacher_upgrade.sql。"+error.message,true);return;}
   teacherClasses=data||[];
+  renderPromptClassOptions();
   $("teacher-classes").innerHTML=teacherClasses.length?teacherClasses.map(c=>`<div class="teacher-class"><h3>${escapeHtml(c.name)}</h3><p>邀請碼：<strong>${escapeHtml(c.join_code)}</strong></p><div class="teacher-actions"><button class="small" data-teacher-class="${c.id}">查看學生</button><button class="small secondary" data-copy-code="${c.id}">複製邀請碼</button></div></div>`).join(""):'<p class="muted">目前沒有建立的班級。可以在上方新增班級，並將邀請碼提供給學生。</p>';
   document.querySelectorAll("[data-teacher-class]").forEach(b=>b.addEventListener("click",()=>showTeacherClass(b.dataset.teacherClass)));
   document.querySelectorAll("[data-copy-code]").forEach(b=>b.addEventListener("click",async()=>{
@@ -225,6 +226,52 @@ async function loadTeacherClasses(){
     if(c){try{await navigator.clipboard.writeText(c.join_code);teacherMessage("已複製邀請碼");}catch{teacherMessage("請手動複製邀請碼："+c.join_code);}}
   }));
 }
+let promptStageDrafts={};
+function renderPromptClassOptions(){
+ const sel=$("prompt-class-select"),previous=sel.value;
+ sel.replaceChildren(new Option("請先選擇班級",""));
+ for(const c of teacherClasses)sel.add(new Option(c.name,c.id));
+ if(teacherClasses.some(c=>c.id===previous))sel.value=previous;
+ else if(teacherClasses.length)sel.value=teacherClasses[0].id;
+ loadClassPrompt();
+}
+function saveStagePromptDraft(){const stage=$("prompt-stage-select").dataset.previous;
+ if(stage)promptStageDrafts[stage]=$("prompt-stage-text").value;
+}
+async function loadClassPrompt(){
+ const classId=$("prompt-class-select").value;
+ promptStageDrafts={};$("prompt-general").value="";$("prompt-enabled").checked=false;
+ $("prompt-stage-select").value="topic";$("prompt-stage-select").dataset.previous="topic";$("prompt-stage-text").value="";
+ if(!classId){setStatus("prompt-status","請先建立班級");return;}
+ const {data,error}=await db.from("class_ai_prompts").select("enabled,general_prompt,stage_prompts").eq("class_id",classId).maybeSingle();
+ if(error){setStatus("prompt-status","讀取失敗："+error.message,true);return;}
+ if($("prompt-class-select").value!==classId)return;
+ $("prompt-enabled").checked=!!data?.enabled;$("prompt-general").value=data?.general_prompt||"";
+ promptStageDrafts=data?.stage_prompts||{};$("prompt-stage-text").value=promptStageDrafts.topic||"";
+ setStatus("prompt-status",data?"已載入本班設定":"本班尚未設定，使用平台預設指令");
+}
+async function saveClassPrompt(reset=false){
+ const classId=$("prompt-class-select").value;
+ if(!classId){setStatus("prompt-status","請先選擇班級",true);return;}
+ saveStagePromptDraft();
+ const stage_prompts={};
+ for(const key of Object.keys(stageNames))stage_prompts[key]=String(promptStageDrafts[key]||"").slice(0,3000);
+ const payload={class_id:classId,teacher_id:currentUser.id,enabled:reset?false:$("prompt-enabled").checked,general_prompt:reset?"":$("prompt-general").value,stage_prompts:reset?{}:stage_prompts,updated_at:new Date().toISOString()};
+ const {error}=await db.from("class_ai_prompts").upsert(payload,{onConflict:"class_id"});
+ if(error){setStatus("prompt-status","儲存失敗："+error.message,true);return;}
+ setStatus("prompt-status",reset?"已停用並清除自訂指令":"已儲存，學生下次提問時生效");
+ if(reset)await loadClassPrompt();
+}
+$("prompt-class-select").addEventListener("change",loadClassPrompt);
+$("prompt-stage-select").addEventListener("change",()=>{
+ const stage=$("prompt-stage-select").dataset.previous;
+ if(stage)promptStageDrafts[stage]=$("prompt-stage-text").value;
+ const next=$("prompt-stage-select").value;
+ $("prompt-stage-text").value=promptStageDrafts[next]||"";
+ $("prompt-stage-select").dataset.previous=next;
+});
+$("prompt-save-btn").addEventListener("click",()=>saveClassPrompt(false));
+$("prompt-reset-btn").addEventListener("click",()=>{if(confirm("確定停用並清除本班自訂 Prompt？"))saveClassPrompt(true);});
 async function createTeacherClass(){
  const name=$("class-name").value.trim();if(!name){teacherMessage("請輸入班級名稱",true);return;}
  const {error}=await db.from("inquiry_classes").insert({name,teacher_id:currentUser.id});
