@@ -219,6 +219,7 @@ async function loadTeacherClasses(){
   if(error){teacherMessage("班級載入失敗："+error.message,true);const sel=$("prompt-class-select");if(sel)sel.replaceChildren(new Option("班級載入失敗，請重新整理", ""));return;}
   teacherClasses=data||[];
   renderPromptClassOptions();
+  renderUsageClassOptions();
   $("teacher-classes").innerHTML=teacherClasses.length?teacherClasses.map(c=>`<div class="teacher-class"><h3>${escapeHtml(c.name)}</h3><p>邀請碼：<strong>${escapeHtml(c.join_code)}</strong></p><div class="teacher-actions"><button class="small" data-teacher-class="${c.id}">查看學生</button><button class="small secondary" data-copy-code="${c.id}">複製邀請碼</button><button class="small danger" data-delete-class="${c.id}">刪除班級</button></div></div>`).join(""):'<p class="muted">目前沒有建立的班級。可以在上方新增班級，並將邀請碼提供給學生。</p>';
   document.querySelectorAll("[data-teacher-class]").forEach(b=>b.addEventListener("click",()=>showTeacherClass(b.dataset.teacherClass)));
   document.querySelectorAll("[data-delete-class]").forEach(b=>b.addEventListener("click",()=>deleteTeacherClass(b.dataset.deleteClass)));
@@ -636,4 +637,26 @@ $("chat-export-btn").addEventListener("click",async()=>{
  const csv='\ufeff'+rows.map(row=>row.map(quote).join(',')).join('\r\n');
  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");
  a.href=url;a.download="探究對話歷程.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
+
+// 班級 AI 使用量：教師只可讀取自己班級的彙總數據。
+function renderUsageClassOptions(){
+ const sel=$("usage-class-select");if(!sel)return;
+ const previous=sel.value;sel.replaceChildren(new Option(teacherClasses.length?"請選擇班級":"目前沒有班級",""));
+ for(const c of teacherClasses)sel.add(new Option(c.name,c.id));
+ if(teacherClasses.some(c=>c.id===previous))sel.value=previous;
+ else if(teacherClasses.length)sel.value=teacherClasses[0].id;
+}
+$("usage-refresh-btn").addEventListener("click",async()=>{
+ const classId=$("usage-class-select").value,days=Number($("usage-days").value);
+ if(!classId){setStatus("usage-status","請先選擇班級",true);return;}
+ setStatus("usage-status","正在讀取使用量…");$("usage-results").replaceChildren();
+ const {data,error}=await db.rpc("teacher_ai_usage_summary",{p_class:classId,p_days:days});
+ if(error){setStatus("usage-status","讀取失敗："+error.message,true);return;}
+ const v=data||{};const summary=document.createElement("p");
+ summary.textContent=`呼叫 ${v.calls||0} 次｜輸入 ${Number(v.input_tokens||0).toLocaleString()} tokens｜輸出 ${Number(v.output_tokens||0).toLocaleString()} tokens｜活躍學生 ${v.active_students||0} 人`;
+ $("usage-results").appendChild(summary);
+ const ul=document.createElement("ul");
+ for(const x of v.by_stage||[]){const li=document.createElement("li");li.textContent=`${stageNames[x.stage]?.[0]||x.stage}：${x.calls} 次`;ul.appendChild(li);}
+ $("usage-results").appendChild(ul);setStatus("usage-status","統計完成（僅含升級後紀錄）");
 });

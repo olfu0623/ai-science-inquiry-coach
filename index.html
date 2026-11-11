@@ -58,6 +58,14 @@
             </div>
           </section>
         </section>
+        <section class="teacher-usage-panel" aria-label="班級 AI 使用量">
+          <h2>班級 AI 使用量</h2><p class="muted">只顯示彙總統計，不顯示學生對話文字。每日額度：學生 30 次；教師預覽 40 次模型呼叫（約 20 次比較）。日期依 UTC 計算。</p>
+          <label>統計班級<select id="usage-class-select"><option value="">請選擇班級</option></select></label>
+          <label>統計期間<select id="usage-days"><option value="7">近 7 天</option><option value="30" selected>近 30 天</option><option value="90">近 90 天</option></select></label>
+          <button id="usage-refresh-btn" type="button" class="small secondary">讀取使用量</button>
+          <p id="usage-status" class="status"></p><div id="usage-results"></div>
+          <p class="muted tiny">Token 來自 OpenAI API 回傳的 usage；未設定模型單價，因此不顯示成本估算。此版本只統計升級後的新請求。</p>
+        </section>
         <div id="teacher-detail" class="teacher-detail hidden"></div>
       </section>
       <section id="app-panel" class="app-grid hidden">

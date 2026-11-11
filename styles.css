@@ -34,3 +34,5 @@ button,input,textarea{font:inherit}button{border:0;border-radius:10px;padding:11
 .prompt-preview-grid>section{padding:14px;border:1px solid var(--border,#d9e0e8);border-radius:10px;min-width:0}
 .prompt-preview-response{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65;min-height:90px}
 @media(max-width:760px){.prompt-preview-grid{grid-template-columns:1fr}}
+
+.teacher-usage-panel{margin-top:24px;padding:20px;border:1px solid var(--line,#ccd5de);border-radius:14px}.teacher-usage-panel label{display:block;margin:10px 0}.teacher-usage-panel select{max-width:350px;width:100%}.teacher-usage-panel ul{padding-left:22px}
