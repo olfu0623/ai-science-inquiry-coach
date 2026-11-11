@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 科學探究教練</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand-mark">✦</div>
+      <div><div class="brand">AI 科學探究教練</div><div class="tagline">AI Science Inquiry Coach</div></div>
+      <div class="top-actions"><span id="user-email" class="muted"></span><button id="logout-btn" class="ghost hidden">登出</button></div>
+    </header>
+
+    <main>
+      <section id="auth-panel" class="auth-card">
+        <div class="eyebrow">HIGH SCHOOL SCIENCE INQUIRY</div>
+        <h1>讓好奇心，成為研究的起點。</h1>
+        <p class="muted">透過循序提問，完成研究問題、假設、實驗設計與數據討論。</p>
+        <label>電子郵件<input id="email" type="email" placeholder="name@school.edu.tw" autocomplete="email"></label>
+        <label>密碼<input id="password" type="password" placeholder="至少 6 個字元" autocomplete="current-password"></label>
+        <div class="button-row"><button id="login-btn">登入</button><button id="signup-btn" class="secondary">建立帳號</button></div>
+        <p id="auth-status" class="status"></p>
+      </section>
+
+      <section id="class-toolbar" class="class-toolbar hidden">
+        <button id="student-mode-btn" class="secondary">學生專題</button>
+        <button id="teacher-mode-btn" class="secondary">教師管理</button>
+        <button id="join-class-open-btn" class="ghost">加入班級</button>
+      </section>
+      <section id="teacher-panel" class="teacher-panel hidden">
+        <div class="teacher-top"><div><div class="eyebrow">TEACHER DASHBOARD</div><h1>班級探究管理</h1><p class="muted">教師可查看已加入班級的學生專題與階段成果，僅能查看學生明確同意分享的 AI 對話。</p></div></div>
+        <div class="teacher-create"><input id="class-name" maxlength="100" placeholder="輸入班級名稱，例如：高二自然探究 A 班"><button id="create-class-btn">建立班級</button></div>
+        <p id="teacher-status" class="status"></p>
+        <div id="teacher-classes" class="teacher-classes"></div>
+        <div id="teacher-detail" class="teacher-detail hidden"></div>
+      </section>
+      <section id="app-panel" class="app-grid hidden">
+        <aside class="sidebar">
+          <div class="side-heading"><span>我的研究專題</span><button id="new-project-btn" class="small">＋ 新增</button></div>
+          <div id="project-list" class="project-list"></div>
+          <div class="side-note"><strong>探究提醒</strong><p>好的研究不只是得到答案，更要讓證據支持你的推論。</p></div>
+        </aside>
+
+        <section class="workspace">
+          <div id="empty-state" class="empty-state">
+            <div class="orb">✦</div><h2>開始一項新的科學探究</h2>
+            <p>建立專題後，AI 教練會依照探究階段陪你思考。</p>
+            <button id="empty-new-btn">建立第一個專題</button>
+          </div>
+
+          <div id="project-view" class="hidden">
+            <div class="project-header">
+              <div><div class="eyebrow">YOUR INQUIRY PROJECT</div><h1 id="project-title"></h1><p id="project-description" class="muted"></p></div>
+              <button id="delete-project-btn" class="danger ghost">刪除專題</button>
+            </div>
+            <div class="stage-strip" id="stage-strip">
+              <button data-stage="topic" class="stage active">1 主題發想</button>
+              <button data-stage="question" class="stage">2 研究問題</button>
+              <button data-stage="hypothesis" class="stage">3 科學假設</button>
+              <button data-stage="design" class="stage">4 實驗設計</button>
+              <button data-stage="data" class="stage">5 數據分析</button>
+              <button data-stage="discussion" class="stage">6 討論反思</button>
+            </div>
+            <section class="progress-panel">
+              <div class="progress-top"><strong>探究歷程進度</strong><span id="progress-label">0 / 6 階段完成</span></div>
+              <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+              <div class="stage-work">
+                <div><strong id="work-title">本階段成果紀錄</strong><span id="stage-status" class="stage-status">尚未開始</span></div>
+                <p id="work-hint">將本階段的重要想法、證據或成果整理在這裡，系統會儲存到你的專題。</p>
+                <textarea id="stage-work" rows="5" placeholder="整理本階段的研究成果……"></textarea>
+                <div class="work-actions"><span id="save-status" class="muted tiny">尚未載入成果</span><div><button id="mark-stage-btn" class="secondary" type="button">標記為已完成</button><button id="save-stage-btn" type="button">儲存成果</button></div></div>
+              </div>
+            </section>
+            <section class="progress-panel feedback-student" aria-label="教師回饋">
+              <div class="progress-top"><strong>教師回饋與探究能力評量</strong><span id="feedback-student-status" class="muted tiny"></span></div>
+              <div id="student-feedback-list" class="feedback-list"><p class="muted">尚未載入教師回饋</p></div>
+            </section>
+            <section class="progress-panel" id="student-analytics">
+              <div class="progress-top"><strong>探究能力分析與學習歷程</strong><button id="student-report-btn" type="button" class="small secondary">列印／儲存 PDF 報告</button></div>
+              <p class="muted tiny">依已發布的教師評量計算；未評分的指標不計入平均。</p>
+              <div id="student-radar" class="radar-layout"></div><div class="ai-diagnosis"><button id="student-diagnose-btn" type="button" class="secondary">AI 個別化學習診斷</button><p id="student-diagnose-status" class="status"></p><div id="student-diagnose-output" class="ai-diagnosis-output"></div><h3>AI 診斷歷程與能力成長</h3><div id="student-diagnosis-history" class="diagnosis-history"></div><div class="research-consent"><label><input id="research-consent" type="checkbox"> 我同意此專題的去識別化評量數值用於研究匯出（可隨時取消；不影響學習及教師評量）</label><p id="research-consent-status" class="muted tiny"></p></div></div>
+            </section>
+            <div class="coach-card">
+              <div class="coach-heading"><div class="coach-avatar">AI</div><div><strong>探究教練</strong><div class="muted tiny" id="stage-caption">主題發想與可行性</div></div><span class="online-dot">● 線上</span></div>
+              <div class="chat-history-tools"><label>對話階段 <select id="chat-stage-filter"><option value="all">全部</option><option value="topic">主題發想</option><option value="question">研究問題</option><option value="hypothesis">科學假設</option><option value="design">實驗設計</option><option value="data">數據分析</option><option value="discussion">討論反思</option><option value="unclassified">舊紀錄（未分類）</option></select></label><button type="button" id="chat-export-btn" class="small secondary">匯出對話 CSV</button></div><div id="chat-log" class="chat-log"></div><div class="chat-sharing"><label><input type="checkbox" id="chat-share-teacher"> 同意授權班級教師查看本專題的 AI 對話（可隨時取消）</label><p id="chat-share-status" class="muted tiny"></p></div>
+              <form id="chat-form" class="chat-form">
+                <textarea id="message-input" rows="2" placeholder="描述你的想法、觀察或目前遇到的困難…"></textarea>
+                <div class="composer-bottom"><span class="muted tiny">提示：請描述你的推理過程，教練會先提問再給建議。</span><button id="send-btn" type="submit">送出 ↗</button></div>
+              </form>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+    <footer>AI 科學探究教練 · 學習者應檢核 AI 建議，並以實際證據支持研究結論</footer>
+  </div>
+
+  <dialog id="project-dialog">
+    <form method="dialog" id="project-form">
+      <div class="dialog-head"><h2>建立研究專題</h2><button class="icon-btn" value="cancel" aria-label="關閉">×</button></div>
+      <label>專題名稱<input id="new-title" required maxlength="100" placeholder="例如：單擺週期與擺長的關係"></label>
+      <label>研究簡介<textarea id="new-description" rows="3" placeholder="目前的觀察、好奇或想研究的現象（可稍後補充）"></textarea></label>
+      <div class="button-row"><button value="cancel" class="secondary">取消</button><button id="create-project-btn" value="default">建立專題</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="join-dialog"><div class="dialog-head"><h2>加入教師班級</h2><button id="join-close-btn" class="icon-btn" type="button" aria-label="關閉">×</button></div>
+    <label>班級邀請碼<input id="join-code" maxlength="20" placeholder="教師提供的邀請碼"></label>
+    <label>顯示名稱<input id="join-name" maxlength="80" placeholder="教師辨識用姓名或暱稱"></label>
+    <p id="join-status" class="status"></p><button id="join-submit-btn" type="button">確認加入</button>
+  </dialog>
+  <script src="./app.js"></script>
+</body>
+</html>
