@@ -294,6 +294,36 @@ $("prompt-stage-select").addEventListener("change",()=>{
 });
 $("prompt-save-btn").addEventListener("click",()=>saveClassPrompt(false));
 $("prompt-reset-btn").addEventListener("click",()=>{if(confirm("確定停用並清除本班自訂 Prompt？"))saveClassPrompt(true);});
+let promptPreviewRunning=false;
+$("prompt-preview-run").addEventListener("click",async()=>{
+  if(promptPreviewRunning)return;
+  const classId=$("prompt-class-select").value;
+  const question=$("prompt-preview-question").value.trim();
+  if(!classId){setStatus("prompt-preview-status","請先選擇班級",true);return;}
+  if(!question){setStatus("prompt-preview-status","請輸入模擬學生問題",true);return;}
+  saveStagePromptDraft();
+  const stage=$("prompt-stage-select").value;
+  const stagePrompts={};
+  for(const key of Object.keys(stageNames))stagePrompts[key]=String(promptStageDrafts[key]||"").slice(0,3000);
+  promptPreviewRunning=true;$("prompt-preview-run").disabled=true;
+  setStatus("prompt-preview-status","AI 正在產生兩組回覆，請稍候…");
+  $("prompt-preview-default").textContent="產生中…";
+  $("prompt-preview-custom").textContent="產生中…";
+  try{
+    const {data,error}=await db.functions.invoke("preview-prompt",{body:{
+      class_id:classId,stage,question,
+      general_prompt:$("prompt-general").value.slice(0,4000),
+      stage_prompts:stagePrompts
+    }});
+    if(error)throw new Error(error.message||"Edge Function 呼叫失敗");
+    if(data?.error)throw new Error(data.error);
+    $("prompt-preview-default").textContent=data.default_reply||"未取得回覆";
+    $("prompt-preview-custom").textContent=data.custom_reply||"未取得回覆";
+    setStatus("prompt-preview-status","測試完成。此操作不會儲存草稿；如需套用，請按上方「儲存本班 AI 設定」。");
+  }catch(e){setStatus("prompt-preview-status","測試失敗："+(e.message||String(e)),true);
+    $("prompt-preview-default").textContent="測試未完成";$("prompt-preview-custom").textContent="測試未完成";
+  }finally{promptPreviewRunning=false;$("prompt-preview-run").disabled=false;}
+});
 async function createTeacherClass(){
  const name=$("class-name").value.trim();if(!name){teacherMessage("請輸入班級名稱",true);return;}
  const {error}=await db.from("inquiry_classes").insert({name,teacher_id:currentUser.id});

@@ -46,6 +46,17 @@
           <label>此階段的補充指令<textarea id="prompt-stage-text" rows="4" maxlength="3000" placeholder="例如：請先要求學生說明自變因與應變因。"></textarea></label>
           <div class="button-row"><button id="prompt-save-btn" type="button">儲存本班 AI 設定</button><button id="prompt-reset-btn" type="button" class="secondary">恢復平台預設（停用自訂）</button></div>
           <p id="prompt-status" class="status"></p>
+          <section class="prompt-preview-panel" aria-label="教師 Prompt 預覽測試">
+            <h3>AI Prompt 預覽與比較（不影響學生資料）</h3>
+            <p class="muted">選擇上方班級與探究階段，輸入模擬學生問題。右側將比較平台預設指令與目前編輯的草稿指令；測試不會儲存草稿或學生對話。</p>
+            <label>模擬學生提問<textarea id="prompt-preview-question" rows="3" maxlength="1500" placeholder="例如：我想研究單擺長度如何影響週期，應該如何開始？"></textarea></label>
+            <button type="button" id="prompt-preview-run">比較預設與草稿回覆</button>
+            <p id="prompt-preview-status" class="status" role="status"></p>
+            <div class="prompt-preview-grid">
+              <section><h4>平台預設 Prompt</h4><div id="prompt-preview-default" class="prompt-preview-response">尚未測試</div></section>
+              <section><h4>教師草稿 Prompt</h4><div id="prompt-preview-custom" class="prompt-preview-response">尚未測試</div></section>
+            </div>
+          </section>
         </section>
         <div id="teacher-detail" class="teacher-detail hidden"></div>
       </section>
