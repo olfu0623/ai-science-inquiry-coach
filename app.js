@@ -26,7 +26,7 @@ async function init(){
   if(!db){ setStatus("auth-status","請先依 README 設定 Supabase URL 與 anon key。",true); return; }
   const {data:{session}}=await db.auth.getSession();
   if(session){currentUser=session.user; await enterApp();}
-  db.auth.onAuthStateChange(async(_event,session)=>{currentUser=session?.user||null;if(currentUser) await enterApp(); else {showApp(false);$("user-email").textContent="";}});
+  db.auth.onAuthStateChange(async(_event,session)=>{currentUser=session?.user||null;if(currentUser) await enterApp(); else {teacherClasses=[];renderPromptClassOptions();showApp(false);$("user-email").textContent="";}});
 }
 async function signIn(signup){
   if(!db){setStatus("auth-status","尚未設定 Supabase 連線資訊。",true);return;}
@@ -216,7 +216,7 @@ async function studentMode(){
 async function loadTeacherClasses(){
   if(!currentUser)return;
   const {data,error}=await db.from("inquiry_classes").select("id,name,join_code,created_at").order("created_at",{ascending:false});
-  if(error){teacherMessage("尚未讀取到教師班級。請確認已執行 teacher_upgrade.sql。"+error.message,true);return;}
+  if(error){teacherMessage("班級載入失敗："+error.message,true);const sel=$("prompt-class-select");if(sel)sel.replaceChildren(new Option("班級載入失敗，請重新整理", ""));return;}
   teacherClasses=data||[];
   renderPromptClassOptions();
   $("teacher-classes").innerHTML=teacherClasses.length?teacherClasses.map(c=>`<div class="teacher-class"><h3>${escapeHtml(c.name)}</h3><p>邀請碼：<strong>${escapeHtml(c.join_code)}</strong></p><div class="teacher-actions"><button class="small" data-teacher-class="${c.id}">查看學生</button><button class="small secondary" data-copy-code="${c.id}">複製邀請碼</button></div></div>`).join(""):'<p class="muted">目前沒有建立的班級。可以在上方新增班級，並將邀請碼提供給學生。</p>';
@@ -228,11 +228,17 @@ async function loadTeacherClasses(){
 }
 let promptStageDrafts={};
 function renderPromptClassOptions(){
- const sel=$("prompt-class-select"),previous=sel.value;
- sel.replaceChildren(new Option("請先選擇班級",""));
- for(const c of teacherClasses)sel.add(new Option(c.name,c.id));
+ const sel=$("prompt-class-select");
+ if(!sel){teacherMessage("找不到 AI 教練設定的班級選單，請確認 index.html 與 app.js 已同步更新。",true);return;}
+ const previous=sel.value;
+ sel.replaceChildren();
+ sel.add(new Option(teacherClasses.length?"請選擇班級":"目前沒有可用班級", ""));
+ for(const c of teacherClasses){
+   const opt=document.createElement("option");opt.value=c.id;opt.textContent=c.name;sel.appendChild(opt);
+ }
  if(teacherClasses.some(c=>c.id===previous))sel.value=previous;
  else if(teacherClasses.length)sel.value=teacherClasses[0].id;
+ sel.disabled=!teacherClasses.length;
  loadClassPrompt();
 }
 function saveStagePromptDraft(){const stage=$("prompt-stage-select").dataset.previous;
@@ -263,6 +269,7 @@ async function saveClassPrompt(reset=false){
  if(reset)await loadClassPrompt();
 }
 $("prompt-class-select").addEventListener("change",loadClassPrompt);
+$("prompt-refresh-classes").addEventListener("click",async()=>{setStatus("prompt-status","重新讀取班級中…");await loadTeacherClasses();});
 $("prompt-stage-select").addEventListener("change",()=>{
  const stage=$("prompt-stage-select").dataset.previous;
  if(stage)promptStageDrafts[stage]=$("prompt-stage-text").value;

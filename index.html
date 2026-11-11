@@ -39,6 +39,7 @@
         <section class="teacher-prompt-editor" id="teacher-prompt-editor">
           <h2>AI 教練設定（依班級）</h2><p class="muted">平台的安全與科學探究原則固定保留。教師指令僅作補充；學生若加入多個班級，系統會選擇最早加入的班級設定。</p>
           <label>選擇班級<select id="prompt-class-select"><option value="">請先選擇班級</option></select></label>
+          <button id="prompt-refresh-classes" type="button" class="small secondary">重新讀取班級</button>
           <label><input type="checkbox" id="prompt-enabled"> 啟用本班自訂指令</label>
           <label>本班共用引導指令<textarea id="prompt-general" rows="5" maxlength="4000" placeholder="例如：先詢問學生觀察到的現象，再引導其辨識變因。"></textarea></label>
           <label>探究階段<select id="prompt-stage-select"><option value="topic">主題發想</option><option value="question">研究問題</option><option value="hypothesis">科學假設</option><option value="design">實驗設計</option><option value="data">數據分析</option><option value="discussion">討論反思</option></select></label>
