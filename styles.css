@@ -65,3 +65,8 @@ button,input,textarea{font:inherit}button{border:0;border-radius:10px;padding:11
 #vision-selection button { margin-left: 8px; }
 .research-images .vision-select { width: auto; margin: 4px; }
 .ai-score-visualization{margin:16px 0;padding:16px;border:1px solid var(--line);border-radius:12px;min-width:0}.ai-score-select{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.ai-score-select label{font-size:13px;font-weight:600;min-width:0}.ai-score-select select{display:block;width:100%;margin-top:6px;padding:8px;border:1px solid var(--line);border-radius:8px;background:white;color:var(--ink)}.ai-score-radar{max-width:420px;margin:auto}.ai-score-radar svg{width:100%;height:auto;display:block}.ai-score-visualization .analytics-stats{margin:12px 0}.ai-score-visualization .analytics-stats strong{font-size:1.2rem}.ai-score-table-wrap{overflow-x:auto}.ai-score-table-wrap .teacher-table{display:table;min-width:300px}.ai-score-visualization h4{margin-top:24px}@media(max-width:550px){.ai-score-select{grid-template-columns:1fr}.ai-score-visualization{padding:10px}}
+
+/* v3.2.2：僅加高學生探究成果欄位，保留垂直拖曳。 */
+#stage-work { min-height: 350px; resize: vertical; }
+#topic-label:not(.hidden) + #stage-work,
+#question-work, #hypothesis-work { min-height: 200px; resize: vertical; }
