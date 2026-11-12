@@ -73,7 +73,7 @@ async function selectProject(id){
   currentProject=projects.find(p=>p.id===id);if(!currentProject)return;
   $("empty-state").classList.add("hidden");$("project-view").classList.remove("hidden");
   switchStudentView("inquiry");
-  currentStage="topic";await loadStageRecords();setStage("topic");renderProgress();renderProjectHeader();renderProjects();await loadMessages();await loadChatSharing();await loadStudentFeedback();$("student-diagnose-output").textContent="";$("student-diagnose-status").textContent="";await loadDiagnosisHistory(currentProject.id,"student",$("student-diagnosis-history"));await loadResearchConsent(currentProject.id);
+  currentStage="topic";await loadStageRecords();setStage("topic");renderProgress();renderProjectHeader();renderProjects();await loadMessages();await loadStudentFeedback();$("student-diagnose-output").textContent="";$("student-diagnose-status").textContent="";await loadDiagnosisHistory(currentProject.id,"student",$("student-diagnosis-history"));
 }
 // 學生工作區與學習診斷中心為同頁獨立視圖；不更動 Supabase 資料與診斷邏輯。
 function switchStudentView(view){
@@ -402,7 +402,7 @@ async function showTeacherClass(classId){
  if(error){detail.textContent="讀取學生失敗："+error.message;return;}
  const ids=(members||[]).map(m=>m.student_id);
  let projectsForClass=[];
- if(ids.length){const result=await db.from("projects").select("id,user_id,title,description,updated_at").in("user_id",ids).order("updated_at",{ascending:false});
+ if(ids.length){const result=await db.from("projects").select("id,user_id,title,description,created_at,updated_at").in("user_id",ids).order("updated_at",{ascending:false});
    if(result.error){detail.textContent="讀取專題失敗："+result.error.message;return;}projectsForClass=result.data||[];}
  let stages=[];
  if(projectsForClass.length){const result=await db.from("project_stages").select("project_id,stage,status,content").in("project_id",projectsForClass.map(p=>p.id));
@@ -414,10 +414,11 @@ async function showTeacherClass(classId){
  const summary=buildClassSummary(members||[],projectsForClass,stages,reviews);
 
  detail.innerHTML=`<h2>${escapeHtml(c.name)} · 學生專題</h2><p class="muted">${ids.length} 位學生，${projectsForClass.length} 個專題。僅供教師檢視，不可修改學生成果。</p>`+
- `<div class="analytics-panel">${summary}</div><section class="analytics-panel" id="research-dashboard"><h3>研究分析（去識別化）</h3><p class="muted">讀取已發布教師評量的歷次快照，按專題比較最早與最新兩次有評分的紀錄。研究匯出僅限學生已同意的專題。</p><button type="button" id="research-analyze-btn" class="small secondary">分析班級能力變化</button><div id="research-analysis-output"></div></section>`+
+ `<div class="analytics-panel">${summary}</div><section class="analytics-panel" id="research-dashboard"><h3>研究分析與資料匯出</h3><p class="muted">讀取已發布教師評量的歷次快照，按專題比較最早與最新兩次有評分的紀錄。匯出含學生識別資訊，僅供核准的班級教師及授權研究用途。</p><button type="button" id="research-analyze-btn" class="small secondary">分析班級能力變化</button><div id="research-analysis-output"></div><p><button type="button" id="research-full-export" class="small secondary">匯出完整研究 CSV（含學生資訊）</button></p><p id="research-export-status" class="status"></p></section>`+
  (projectsForClass.length?`<table class="teacher-table"><thead><tr><th>學生</th><th>專題</th><th>完成進度</th><th>最近更新</th><th>操作</th></tr></thead><tbody>`+
  projectsForClass.map(p=>{const n=stages.filter(x=>x.project_id===p.id&&x.status==="completed").length;
  return `<tr><td>${escapeHtml(memberMap.get(p.user_id)||"未命名")}</td><td>${escapeHtml(p.title)}</td><td>${n} / 6</td><td>${new Date(p.updated_at).toLocaleDateString("zh-TW")}</td><td><button class="small secondary" data-inspect="${p.id}">查看成果</button></td></tr>`;}).join("")+`</tbody></table>`:'<p class="muted">目前沒有學生專題。學生加入班級並建立專題後，會顯示在這裡。</p>')+`<div id="teacher-project-output"></div>`;
+ detail.querySelector("#research-full-export")?.addEventListener("click",()=>exportClassResearch(classId,c.name,projectsForClass));
  detail.querySelector("#research-analyze-btn")?.addEventListener("click",()=>runClassResearch(classId,projectsForClass));
  detail.querySelectorAll("[data-inspect]").forEach(b=>b.addEventListener("click",()=>{
   const p=projectsForClass.find(x=>x.id===b.dataset.inspect);if(!p)return;
@@ -426,15 +427,14 @@ async function showTeacherClass(classId){
   Object.entries(labels).map(([key,label])=>{const r=stages.find(x=>x.project_id===p.id&&x.stage===key);const state=r?.status==="completed"?"已完成":r?.status==="in_progress"?"進行中":"尚未開始";
   return `<details class="teacher-stage"><summary>${escapeHtml(label)} · ${state}</summary><div class="teacher-work">${escapeHtml(r?.content||"尚無成果紀錄")}</div><div class="teacher-review-slot" data-review-stage="${key}"></div></details>`;}).join("");
   const chatBox=document.createElement("section");chatBox.className="analytics-panel chat-teacher-panel";
-  chatBox.innerHTML='<h3>學生與 AI 對話歷程</h3><p class="muted tiny">僅能讀取學生同意分享的專題對話；不納入研究匯出。</p><button type="button" class="small secondary">讀取已授權對話</button><p class="status"></p><div class="teacher-chat-results"></div>';
+  chatBox.innerHTML='<h3>學生與 AI 對話歷程</h3><p class="muted tiny">班級教師可查看學生完整對話，僅供教學及已核准研究用途。</p><button type="button" class="small secondary">讀取對話歷程</button><p class="status"></p><div class="teacher-chat-results"></div>';
   $("teacher-project-output").appendChild(chatBox);
   chatBox.querySelector("button").addEventListener("click",async()=>{
     const status=chatBox.querySelector(".status"),out=chatBox.querySelector(".teacher-chat-results");status.textContent="讀取中…";out.replaceChildren();
-    const {data,error}=await db.from("messages").select("role,content,stage,created_at").eq("project_id",p.id).order("created_at",{ascending:true}).limit(500);
-    if(error){status.textContent="讀取失敗："+error.message;return;}
-    if(!data?.length){status.textContent="目前沒有可查看的對話（學生可能尚未同意分享）。";return;}
-    status.textContent=`已載入 ${data.length} 則訊息（最多 500 則）`;
-    for(const m of data){const item=document.createElement("div");item.className="teacher-chat-item";
+    let data;try{data=await researchReadAll("messages","id,role,content,stage,created_at",p.id);}catch(e){status.textContent="讀取失敗："+e.message;return;}
+    if(!data?.length){status.textContent="目前沒有對話。";return;}
+    status.textContent=`已載入 ${data.length} 則訊息`;
+    for(const m of data.sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))){const item=document.createElement("div");item.className="teacher-chat-item";
       const head=document.createElement("strong");head.textContent=(m.role==="assistant"?"AI":"學生")+" · "+(stageNames[m.stage]?.[0]||"未分類")+" · "+new Date(m.created_at).toLocaleString("zh-TW");
       const body=document.createElement("p");body.textContent=m.content;item.append(head,body);out.append(item);}
   });
@@ -599,21 +599,7 @@ $("student-diagnose-btn").addEventListener("click",async()=>{
 });
 
 
-// 第八階段：學生可撤回研究匯出同意；教學功能與同意狀態無關。
-async function loadResearchConsent(projectId){
- const input=$("research-consent"), status=$("research-consent-status");if(!input)return;
- input.disabled=true;input.checked=false;status.textContent="讀取研究資料同意狀態中…";
- const {data,error}=await db.from("research_consents").select("consented").eq("project_id",projectId).maybeSingle();
- if(currentProject?.id!==projectId)return;
- if(error){status.textContent="無法讀取同意狀態，請先執行 research_upgrade.sql";return;}
- input.checked=data?.consented===true;input.disabled=false;status.textContent="只包含去識別化的評量數值與時間，不包含姓名、研究文字或 AI 對話。";
-}
-$("research-consent").addEventListener("change",async()=>{
- const projectId=currentProject?.id;if(!projectId)return;
- const input=$("research-consent"),status=$("research-consent-status");input.disabled=true;
- const {error}=await db.from("research_consents").upsert({project_id:projectId,student_id:currentUser.id,consented:input.checked,updated_at:new Date().toISOString()},{onConflict:"project_id"});
- if(error){status.textContent="儲存失敗："+error.message;await loadResearchConsent(projectId);}else{status.textContent=input.checked?"已同意，可隨時取消":"已取消研究匯出同意";input.disabled=false;}
-});
+// 校方登錄授權：學生端僅顯示狀態。
 function researchSnapshots(rows){
  const keys=["conceptual_reasoning","inquiry_design","evidence_analysis","reflection"];
  return rows.filter(r=>r.ratings_snapshot&&keys.some(k=>Number(r.ratings_snapshot[k])>=1&&Number(r.ratings_snapshot[k])<=4))
@@ -624,17 +610,11 @@ async function runClassResearch(classId,projects){
  output.textContent="讀取研究資料中…";
  if(!projects.length){output.textContent="班級目前沒有專題";return;}
  const ids=projects.map(p=>p.id);
- const [hist,consents]=await Promise.all([
-  db.from("diagnosis_history").select("project_id,created_at,ratings_snapshot").eq("mode","student").in("project_id",ids).order("created_at",{ascending:true}).limit(1000),
-  db.from("research_consents").select("project_id,consented").in("project_id",ids)
- ]);
- if(hist.error||consents.error){output.textContent="資料讀取失敗："+(hist.error?.message||consents.error?.message);return;}
- const allowed=new Set((consents.data||[]).filter(x=>x.consented===true).map(x=>x.project_id));
+ let hist;try{hist={data:(await Promise.all(ids.map(id=>researchReadAll("diagnosis_history","id,project_id,created_at,ratings_snapshot",id,"student")))).flat()};}catch(e){output.textContent="資料讀取失敗："+e.message;return;}
  const keys=["conceptual_reasoning","inquiry_design","evidence_analysis","reflection"];
  const labels=["科學概念與推理","探究方法與變因控制","證據分析與解釋","反思與改進"];
  const rows=[];
  for(const p of projects){
-  if(!allowed.has(p.id))continue;
   const snapshots=researchSnapshots((hist.data||[]).filter(x=>x.project_id===p.id));
   if(snapshots.length<2)continue;
   const first=snapshots[0],last=snapshots[snapshots.length-1];
@@ -646,44 +626,28 @@ async function runClassResearch(classId,projects){
   const pairs=rows.map(r=>[Number(r.first.ratings_snapshot[k]),Number(r.last.ratings_snapshot[k])]).filter(([a,b])=>a>=1&&a<=4&&b>=1&&b<=4);
   return {n:pairs.length,pre:pairs.length?pairs.reduce((s,p)=>s+p[0],0)/pairs.length:null,post:pairs.length?pairs.reduce((s,p)=>s+p[1],0)/pairs.length:null};
  });
- output.innerHTML=`<p>已同意且至少有兩次有效評量快照的專題：<strong>${eligible}</strong> 個。比較最早與最新一次，非標準化前後測。</p>`+
+ output.innerHTML=`<p>至少有兩次有效評量快照的專題：<strong>${eligible}</strong> 個。比較最早與最新一次，非標準化前後測。</p>`+
  `<table class="teacher-table"><thead><tr><th>能力指標</th><th>配對數</th><th>首次平均</th><th>最近平均</th><th>差異</th></tr></thead><tbody>`+
  means.map((m,i)=>`<tr><td>${labels[i]}</td><td>${m.n}</td><td>${m.pre===null?'—':m.pre.toFixed(2)}</td><td>${m.post===null?'—':m.post.toFixed(2)}</td><td>${m.pre===null?'—':(m.post-m.pre).toFixed(2)}</td></tr>`).join("")+`</tbody></table>`+
- `<p class="muted tiny">注意：這是同一專題在不同時間的教師評量快照，不是實驗前後測；重複診斷可能沒有新的教師評量。少於 5 個同意專題時停用匯出以降低再識別風險。</p>`+
- `<button id="research-export-btn" type="button" class="small secondary" ${eligible<5?'disabled':''}>匯出研究 CSV（僅同意專題）</button>`;
+ `<p class="muted tiny">注意：這是同一專題在不同時間的教師評量快照，不是實驗前後測；重複診斷可能沒有新的教師評量。完整研究資料請使用上方匯出功能。</p>`+
+ `<button id="research-export-btn" type="button" class="small secondary" ${eligible===0?'disabled':''}>匯出配對評量 CSV</button>`;
  output.querySelector("#research-export-btn")?.addEventListener("click",async()=>{
-  if(rows.length<5)return;
-  // 不輸出專題 ID、姓名、原始文字或逐筆時間；僅輸出四面向配對評量數值。
-  const header=["匿名序號",...keys.flatMap(k=>[k+"_first",k+"_latest"])];
+  if(!rows.length)return;
+  // 配對評量保留固定識別碼，供研究者與其他資料連結。
+  const header=["學生UUID","專題ID",...keys.flatMap(k=>[k+"_first",k+"_latest"])];
   const lines=[header.join(",")];
   for(let i=0;i<rows.length;i++){
-   const r=rows[i];lines.push([i+1,...keys.flatMap(k=>{
+   const r=rows[i];lines.push([projects.find(p=>p.id===r.projectId)?.user_id,r.projectId,...keys.flatMap(k=>{
     const a=Number(r.first.ratings_snapshot[k]),b=Number(r.last.ratings_snapshot[k]);
     return [a>=1&&a<=4?a:"",b>=1&&b<=4?b:""];
    })].join(","));
   }
   const blob=new Blob(["\ufeff"+lines.join("\r\n")],{type:"text/csv;charset=utf-8"});
-  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="inquiry_research_anonymized.csv";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="inquiry_research_paired.csv";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
  });
 }
 
 // 對話歷程：逐專題分享授權及學生自行匯出
-async function loadChatSharing(){
- $("chat-share-teacher").checked=false;$("chat-share-status").textContent="";
- const id=currentProject?.id;if(!id)return;
- const {data,error}=await db.from("chat_sharing_consents").select("allow_teacher_read").eq("project_id",id).maybeSingle();
- if(currentProject?.id!==id)return;
- if(error){$("chat-share-status").textContent="讀取分享設定失敗："+error.message;return;}
- $("chat-share-teacher").checked=!!data?.allow_teacher_read;
-}
-$("chat-share-teacher").addEventListener("change",async e=>{
- const id=currentProject?.id;if(!id)return;
- const checked=e.target.checked;e.target.disabled=true;
- const {error}=await db.from("chat_sharing_consents").upsert({project_id:id,user_id:currentUser.id,allow_teacher_read:checked,updated_at:new Date().toISOString()},{onConflict:"project_id"});
- e.target.disabled=false;
- if(error){e.target.checked=!checked;$("chat-share-status").textContent="設定失敗："+error.message;return;}
- $("chat-share-status").textContent=checked?"已同意教師查看本專題對話":"已取消教師查看授權";
-});
 $("chat-export-btn").addEventListener("click",async()=>{
  if(!currentProject)return;
  const {data,error}=await db.from("messages").select("created_at,stage,role,content").eq("project_id",currentProject.id).order("created_at",{ascending:true}).limit(10000);
@@ -716,3 +680,43 @@ $("usage-refresh-btn").addEventListener("click",async()=>{
  for(const x of v.by_stage||[]){const li=document.createElement("li");li.textContent=`${stageNames[x.stage]?.[0]||x.stage}：${x.calls} 次`;ul.appendChild(li);}
  $("usage-results").appendChild(ul);setStatus("usage-status","統計完成（僅含升級後紀錄）");
 });
+
+// Paginate with a stable unique key; RLS is enforced for every request.
+async function researchReadAll(table,columns,projectId,mode){
+ const rows=[];for(let offset=0;;offset+=200){
+  let q=db.from(table).select(columns).eq("project_id",projectId);
+  if(mode)q=q.eq("mode",mode);
+  const {data,error}=await q.order("id",{ascending:true}).range(offset,offset+199);
+  if(error)throw new Error(error.message);rows.push(...(data||[]));if(!data||data.length<200)break;
+ }return rows;
+}
+async function exportClassResearch(classId,className,projects){
+ const status=$("research-export-status"),button=$("research-full-export");
+ if(!confirm("此檔案包含可識別學生的資料及完整對話。請確認已取得適用的研究授權，並將檔案儲存在受控位置。是否繼續？"))return;
+ button.disabled=true;status.textContent="正在讀取研究資料…";
+ try{
+  const {data:members,error}=await db.rpc("class_research_students",{p_class:classId});if(error)throw new Error(error.message);
+  if(!members?.length)throw new Error("無班級存取權限或班級沒有學生");
+  const map=new Map(members.map(m=>[m.student_id,m]));
+  const header=["班級ID","班級","學生UUID","學生姓名或暱稱","Email","專題ID","專題名稱","資料類型","紀錄ID","時間","階段","角色或狀態","內容","概念推理","探究設計","證據分析","反思","輸入Token","輸出Token"];
+  const rows=[header];
+  for(const m of members)rows.push([classId,className,m.student_id,m.display_name,m.email,"","","student"]);
+  for(const p of projects){const m=map.get(p.user_id);if(!m)continue;
+   const base=[classId,className,m.student_id,m.display_name,m.email,p.id,p.title];
+   rows.push([...base,"project",p.id,p.created_at,"","",p.description]);
+   const [stages,msgs,diagnoses,usage]=await Promise.all([
+    researchReadAll("project_stages","id,stage,status,content,updated_at",p.id),
+    researchReadAll("messages","id,stage,role,content,created_at",p.id),
+    researchReadAll("diagnosis_history","id,created_at,reply,ratings_snapshot",p.id,"student"),
+    researchReadAll("ai_usage_events","id,created_at,stage,status,input_tokens,output_tokens",p.id)
+   ]);
+   for(const x of stages)rows.push([...base,"stage",x.id,x.updated_at,x.stage,x.status,x.content]);
+   for(const x of msgs)rows.push([...base,"message",x.id,x.created_at,x.stage,x.role,x.content]);
+   for(const x of diagnoses){const r=x.ratings_snapshot||{};rows.push([...base,"diagnosis",x.id,x.created_at,"","",x.reply,r.conceptual_reasoning,r.inquiry_design,r.evidence_analysis,r.reflection]);}
+   for(const x of usage)rows.push([...base,"usage",x.id,x.created_at,x.stage,x.status,"","","","","",x.input_tokens,x.output_tokens]);
+  }
+  const quote=v=>'"'+String(v??"").replace(/^[\s]*[=+@-]/,m=>"'"+m).replace(/"/g,'""')+'"';
+  const csv="\ufeff"+rows.map(r=>header.map((_,i)=>quote(r[i])).join(",")).join("\r\n");
+  const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));const a=document.createElement("a");a.href=url;a.download="class_research_identified.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status.textContent=`匯出完成：${rows.length-1} 筆紀錄。`;
+ }catch(e){status.textContent="匯出失敗："+e.message;}finally{button.disabled=false;}
+}

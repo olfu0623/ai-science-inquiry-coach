@@ -116,7 +116,7 @@
             </section>
             <div class="coach-card">
               <div class="coach-heading"><div class="coach-avatar">AI</div><div><strong>探究教練</strong><div class="muted tiny" id="stage-caption">主題發想與可行性</div></div><span class="online-dot">● 線上</span></div>
-              <div class="chat-history-tools"><span class="muted tiny">同一專題的完整對話歷程</span><button type="button" id="chat-export-btn" class="small secondary">匯出對話 CSV</button></div><div id="chat-log" class="chat-log"></div><div class="chat-sharing"><label><input type="checkbox" id="chat-share-teacher"> 同意授權班級教師查看本專題的 AI 對話（可隨時取消）</label><p id="chat-share-status" class="muted tiny"></p></div>
+              <div class="chat-history-tools"><span class="muted tiny">同一專題的完整對話歷程</span><button type="button" id="chat-export-btn" class="small secondary">匯出對話 CSV</button></div><div id="chat-log" class="chat-log"></div><div class="chat-sharing"><p class="muted tiny">班級教師可查看本專題 AI 對話，供教學及經核准的研究使用。</p></div>
               <form id="chat-form" class="chat-form">
                 <textarea id="message-input" rows="2" placeholder="描述你的想法、觀察或目前遇到的困難…"></textarea>
                 <div class="composer-bottom"><span class="muted tiny">提示：請描述你的推理過程，教練會先提問再給建議。</span><button id="send-btn" type="submit">送出 ↗</button></div>
@@ -128,7 +128,7 @@
             <section class="progress-panel" id="student-analytics">
               <div class="progress-top"><strong>探究能力分析與學習歷程</strong><button id="student-report-btn" type="button" class="small secondary">列印／儲存 PDF 報告</button></div>
               <p class="muted tiny">依已發布的教師評量計算；未評分的指標不計入平均。</p>
-              <div id="student-radar" class="radar-layout"></div><div class="ai-diagnosis"><button id="student-diagnose-btn" type="button" class="secondary">AI 個別化學習診斷</button><p id="student-diagnose-status" class="status"></p><div id="student-diagnose-output" class="ai-diagnosis-output"></div><h3>AI 診斷歷程與能力成長</h3><div id="student-diagnosis-history" class="diagnosis-history"></div><div class="research-consent"><label><input id="research-consent" type="checkbox"> 我同意此專題的去識別化評量數值用於研究匯出（可隨時取消；不影響學習及教師評量）</label><p id="research-consent-status" class="muted tiny"></p></div></div>
+              <div id="student-radar" class="radar-layout"></div><div class="ai-diagnosis"><button id="student-diagnose-btn" type="button" class="secondary">AI 個別化學習診斷</button><p id="student-diagnose-status" class="status"></p><div id="student-diagnose-output" class="ai-diagnosis-output"></div><h3>AI 診斷歷程與能力成長</h3><div id="student-diagnosis-history" class="diagnosis-history"></div><div class="research-consent"><p class="muted tiny">班級教師可匯出含學生識別資訊的學習資料；研究使用時由研究者依核准規範保管及去識別化。</p></div></div>
             </section>
             </div>
           </div>
