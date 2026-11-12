@@ -8,6 +8,8 @@ const db = supabaseReady ? window.supabase.createClient(SUPABASE_URL, SUPABASE_A
 let currentUser = null, currentProject = null, currentStage = "topic", projects = [], stageRecords = [];
 let stageDirty = false, stageSaving = false, autosaveTimer = null;
 let chatHistory=[];
+let approvedTeacherId=null;
+let roleCheckVersion=0;
 
 const stageNames = {
   topic: ["主題發想與可行性","先從你觀察到的現象或感到好奇的事情開始。"],
@@ -19,7 +21,7 @@ const stageNames = {
 };
 
 function setStatus(id, msg, error=false){ const el=$(id); el.textContent=msg; el.classList.toggle("error",error); }
-function showApp(on){ $("auth-panel").classList.toggle("hidden",on); $("app-panel").classList.toggle("hidden",!on); $("class-toolbar").classList.toggle("hidden",!on); $("teacher-panel").classList.add("hidden"); $("logout-btn").classList.toggle("hidden",!on); }
+function showApp(on){ if(!on){approvedTeacherId=null;roleCheckVersion++;} $("teacher-mode-btn").classList.add("hidden"); $("auth-panel").classList.toggle("hidden",on); $("app-panel").classList.toggle("hidden",!on); $("class-toolbar").classList.toggle("hidden",!on); $("teacher-panel").classList.add("hidden"); $("logout-btn").classList.toggle("hidden",!on); }
 function escapeHtml(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 
 async function init(){
@@ -39,8 +41,15 @@ async function signIn(signup){
 }
 async function enterApp(){
   showApp(true);$("user-email").textContent=currentUser.email||"已登入";
+  const userId=currentUser.id, version=++roleCheckVersion;
+  approvedTeacherId=null;
+  const {data:approved,error:roleError}=await db.rpc("is_approved_teacher",{p_user:userId});
+  if(version!==roleCheckVersion || currentUser?.id!==userId)return;
+  approvedTeacherId=!roleError && approved===true ? userId : null;
+  $("teacher-mode-btn").classList.toggle("hidden",approvedTeacherId!==userId);
+  if(roleError)console.warn("教師身分確認失敗",roleError.message);
   await loadProjects();
-  await loadTeacherClasses();
+  if(approvedTeacherId===userId && currentUser?.id===userId)await loadTeacherClasses();
 }
 async function loadProjects(){
   const {data,error}=await db.from("projects").select("*").eq("user_id",currentUser.id).order("updated_at",{ascending:false});
@@ -253,6 +262,7 @@ init();
 let teacherClasses=[];
 function teacherMessage(message,error=false){setStatus("teacher-status",message,error);}
 function teacherMode(){
+  if(!currentUser || approvedTeacherId!==currentUser.id)return;
   $("app-panel").classList.add("hidden");$("teacher-panel").classList.remove("hidden");
   loadTeacherClasses();
 }
@@ -261,7 +271,7 @@ async function studentMode(){
   $("teacher-panel").classList.add("hidden");$("app-panel").classList.remove("hidden");
 }
 async function loadTeacherClasses(){
-  if(!currentUser)return;
+  if(!currentUser || approvedTeacherId!==currentUser.id)return;
   const {data,error}=await db.from("inquiry_classes").select("id,name,join_code,created_at").order("created_at",{ascending:false});
   if(error){teacherMessage("班級載入失敗："+error.message,true);const sel=$("prompt-class-select");if(sel)sel.replaceChildren(new Option("班級載入失敗，請重新整理", ""));return;}
   teacherClasses=data||[];
