@@ -78,13 +78,66 @@ function retryAiFormatting(){
 window.addEventListener('ai-format-ready',retryAiFormatting);
 function escapeHtml(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 
-async function init(){
-  if(!db){ setStatus("auth-status","請先依 README 設定 Supabase URL 與 anon key。",true); return; }
-  const {data:{session}}=await db.auth.getSession();
-  if(session){currentUser=session.user; await enterApp();}
-  db.auth.onAuthStateChange(async(_event,session)=>{currentUser=session?.user||null;if(currentUser) await enterApp(); else {teacherClasses=[];renderPromptClassOptions();showApp(false);$("user-email").textContent="";}});
+// Password recovery uses Supabase Auth's verified recovery session.
+const recoveryHash=new URLSearchParams(location.hash.slice(1));
+const recoveryQuery=new URLSearchParams(location.search);
+const recoveryRequested=recoveryHash.get("type")==="recovery" || recoveryQuery.get("reset")==="1";
+let recoveryMode=recoveryRequested, recoveryVerified=false, recoveryBusy=false;
+function authView(view){
+  showApp(false); $("auth-panel").classList.toggle("hidden",view!=="login");
+  $("forgot-panel").classList.toggle("hidden",view!=="forgot");
+  $("recovery-panel").classList.toggle("hidden",view!=="recovery");
+  $("user-email").textContent="";
 }
+function cleanRecoveryUrl(){const url=new URL(location.href);url.searchParams.delete("reset");url.searchParams.delete("code");url.hash="";history.replaceState(null,"",url.pathname+url.search);}
+function showRecovery(){recoveryMode=true;recoveryVerified=true;authView("recovery");$("recovery-save").disabled=false;setStatus("recovery-status","");}
+async function init(){
+  if(!db){setStatus("auth-status","請先依 README 設定 Supabase URL 與 anon key。",true);return;}
+  if(recoveryRequested){authView("recovery");$("recovery-save").disabled=true;setStatus("recovery-status","正在驗證重設連結…");}
+  db.auth.onAuthStateChange((event,session)=>{
+    if(event==="PASSWORD_RECOVERY"){currentUser=session?.user||null;if(session)showRecovery();return;}
+    if(recoveryMode)return;
+    // Do not await Supabase calls inside its auth callback.
+    if(event==="INITIAL_SESSION")return;
+    if(event==="SIGNED_OUT"){currentUser=null;teacherClasses=[];renderPromptClassOptions();authView("login");return;}
+    if(event==="SIGNED_IN"&&session&&currentUser?.id!==session.user.id){currentUser=session.user;setTimeout(()=>{if(!recoveryMode&&currentUser?.id===session.user.id)enterApp();},0);}
+  });
+  const {data:{session},error}=await db.auth.getSession();
+  if(recoveryMode){
+    if(!recoveryVerified){$("recovery-save").disabled=true;setStatus("recovery-status","重設連結無效或已過期，請返回登入重新申請。",true);}
+    return;
+  }
+  if(session){currentUser=session.user;await enterApp();}
+}
+async function requestPasswordReset(event){
+  event.preventDefault();if(!db)return;
+  const email=$("reset-email").value.trim();if(!$("reset-email").checkValidity())return;
+  const btn=$("reset-send");btn.disabled=true;setStatus("forgot-status","處理中…");
+  try{const url=new URL(location.pathname,location.origin);url.searchParams.set("reset","1");
+    const {error}=await db.auth.resetPasswordForEmail(email,{redirectTo:url.href});
+    if(error){setStatus("forgot-status","暫時無法寄送，請稍後再試或聯絡管理員。",true);return;}
+    setStatus("forgot-status","若此 Email 已註冊，請查看密碼重設信及垃圾郵件資料夾。");
+  }catch{setStatus("forgot-status","連線失敗，請稍後再試。",true);}finally{btn.disabled=false;}
+}
+async function finishRecovery(message){
+  const {error}=await db.auth.signOut({scope:"local"});
+  if(error){setStatus("recovery-status","無法結束目前登入狀態，請再試一次。",true);return false;}
+  recoveryMode=false;recoveryVerified=false;currentUser=null;cleanRecoveryUrl();$("new-password").value="";$("confirm-password").value="";$("password").value="";authView("login");setStatus("auth-status",message);return true;
+}
+async function updatePassword(event){
+  event.preventDefault();if(!db||!recoveryVerified||recoveryBusy)return;
+  const password=$("new-password").value;if(password.length<6||password!==$("confirm-password").value){setStatus("recovery-status","請確認兩次密碼一致且至少 6 個字元。",true);return;}
+  recoveryBusy=true;$("recovery-save").disabled=true;$("recovery-cancel").disabled=true;
+  try{const {error}=await db.auth.updateUser({password});if(error){setStatus("recovery-status","更新失敗："+error.message,true);return;}await finishRecovery("密碼已更新，請使用新密碼登入。");}
+  catch{setStatus("recovery-status","連線失敗，請稍後再試。",true);}finally{recoveryBusy=false;$("recovery-save").disabled=!recoveryVerified;$("recovery-cancel").disabled=false;}
+}
+$("forgot-password-btn").addEventListener("click",()=>{$("reset-email").value=$("email").value;setStatus("forgot-status","");authView("forgot");});
+$("reset-back").addEventListener("click",()=>authView("login"));
+$("forgot-form").addEventListener("submit",requestPasswordReset);
+$("recovery-form").addEventListener("submit",updatePassword);
+$("recovery-cancel").addEventListener("click",async()=>{if(recoveryBusy)return;try{await finishRecovery("");}catch{setStatus("recovery-status","無法返回登入，請稍後再試。",true);}});
 async function signIn(signup){
+  if(recoveryMode)return;
   if(!db){setStatus("auth-status","尚未設定 Supabase 連線資訊。",true);return;}
   const email=$("email").value.trim(),password=$("password").value;
   if(!email||password.length<6){setStatus("auth-status","請輸入有效 Email 與至少 6 位元密碼。",true);return;}

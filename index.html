@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI 科學探究教練</title>
-  <link rel="stylesheet" href="./styles.css?v=3.2.7" />
+  <link rel="stylesheet" href="./styles.css?v=3.2.8" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -23,9 +23,23 @@
         <label>電子郵件<input id="email" type="email" placeholder="name@school.edu.tw" autocomplete="email"></label>
         <label>密碼<input id="password" type="password" placeholder="至少 6 個字元" autocomplete="current-password"></label>
         <div class="button-row"><button id="login-btn">登入</button><button id="signup-btn" class="secondary">建立帳號</button></div>
+        <button id="forgot-password-btn" type="button" class="ghost">忘記密碼？</button>
         <p id="auth-status" class="status"></p>
       </section>
 
+      <section id="forgot-panel" class="auth-card hidden">
+        <h1>忘記密碼</h1><p class="muted">輸入註冊電子郵件，取得密碼重設連結。</p>
+        <form id="forgot-form"><label>電子郵件<input id="reset-email" type="email" autocomplete="email" required></label>
+        <div class="button-row"><button id="reset-send" type="submit">寄送重設信</button><button id="reset-back" type="button" class="secondary">返回登入</button></div></form>
+        <p id="forgot-status" class="status" role="status"></p>
+      </section>
+      <section id="recovery-panel" class="auth-card hidden">
+        <h1>設定新密碼</h1><p class="muted">請輸入至少 6 個字元的新密碼。</p>
+        <form id="recovery-form"><label>新密碼<input id="new-password" type="password" autocomplete="new-password" minlength="6" required></label>
+        <label>確認新密碼<input id="confirm-password" type="password" autocomplete="new-password" minlength="6" required></label>
+        <div class="button-row"><button id="recovery-save" type="submit">更新密碼</button><button id="recovery-cancel" type="button" class="secondary">取消並返回登入</button></div></form>
+        <p id="recovery-status" class="status" role="status"></p>
+      </section>
       <section id="class-toolbar" class="class-toolbar hidden">
         <button id="student-mode-btn" class="secondary">我的專題</button>
         <button id="teacher-mode-btn" class="secondary hidden">教師管理</button>
@@ -166,6 +180,6 @@
     <p id="join-status" class="status"></p><button id="join-submit-btn" type="button">確認加入</button>
   </dialog>
   <script src="./ai-format-loader.js?v=3.2.4"></script>
-  <script src="./app.js?v=3.2.6"></script>
+  <script src="./app.js?v=3.2.8"></script>
 </body>
 </html>
