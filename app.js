@@ -55,6 +55,7 @@ function renderProjects(){
 }
 function showEmpty(){$("empty-state").classList.remove("hidden");$("project-view").classList.add("hidden");currentProject=null;renderProjects();}
 async function selectProject(id){
+  if(aiRequestInProgress){alert("請等待 AI 回覆完成後再切換專題。");return;}
   if(currentProject && stageDirty){
     const ok = await saveStage();
     if(!ok) return;
@@ -91,7 +92,7 @@ function setStage(stage){
   stageDirty=false;
   currentStage=stage;
   document.querySelectorAll(".stage").forEach(b=>b.classList.toggle("active",b.dataset.stage===stage));
-  $("stage-caption").textContent=stageNames[stage][0];
+  $("stage-caption").textContent="專題連續對話｜目前引導："+stageNames[stage][0];
   $("message-input").placeholder=stageNames[stage][1]+" 也可以告訴我你目前的想法…";
   const record=stageRecords.find(r=>r.stage===stage);
   $("work-title").textContent=stageNames[stage][0]+"｜成果紀錄";
@@ -166,10 +167,9 @@ async function loadMessages(){
   if(aiRequestInProgress)showAiWaiting();
 }
 function renderChatHistory(){
-  const filter=$("chat-stage-filter").value;
-  const data=chatHistory.filter(m=>filter==="all"||(filter==="unclassified"?!m.stage:m.stage===filter));
+  const data=chatHistory;
   $("chat-log").innerHTML="";
-  if(!data.length && filter==="all")addBubble("ai","你好！我是你的 AI 科學探究教練。先告訴我：你最近觀察到什麼有趣的現象，或最想解開哪個科學問題？");
+  if(!data.length)addBubble("ai","你好！我是你的 AI 科學探究教練。先告訴我：你最近觀察到什麼有趣的現象，或最想解開哪個科學問題？");
   data.forEach(m=>addBubble(m.role==="assistant"?"ai":"user",m.content,m.stage));
 }
 function addBubble(role,text,stage){
@@ -200,15 +200,16 @@ function removeAiWaiting(){document.getElementById("ai-waiting")?.remove();}
 async function sendMessage(e){
   e.preventDefault();if(!currentProject||aiRequestInProgress)return;
   const content=$("message-input").value.trim();if(!content)return;
+  const projectId=currentProject.id, stage=currentStage;
   aiRequestInProgress=true;
   $("message-input").value="";
-  addBubble("user",content);
+  addBubble("user",content,stage);
   $("send-btn").disabled=true;$("send-btn").textContent="AI 回覆中…";
   showAiWaiting();
   try{
-    const save=await db.from("messages").insert({project_id:currentProject.id,user_id:currentUser.id,role:"user",content,stage:currentStage});
+    const save=await db.from("messages").insert({project_id:projectId,user_id:currentUser.id,role:"user",content,stage});
     if(save.error)throw new Error("訊息儲存失敗："+save.error.message);
-    const {data,error}=await db.functions.invoke("coach",{body:{project_id:currentProject.id,stage:currentStage}});
+    const {data,error}=await db.functions.invoke("coach",{body:{project_id:projectId,stage}});
     if(error)throw new Error("目前無法連接 AI 教練："+error.message);
     await loadMessages();
     if(!data?.reply)addBubble("ai","我暫時沒有產生回覆，請再試一次。");
@@ -222,6 +223,7 @@ async function sendMessage(e){
   }
 }
 async function deleteProject(){
+  if(aiRequestInProgress){alert("請等待 AI 回覆完成後再刪除專題。");return;}
   clearTimeout(autosaveTimer);
   if(!currentProject||!confirm(`確定刪除「${currentProject.title}」及其對話紀錄？`))return;
   const {error}=await db.from("projects").delete().eq("id",currentProject.id);
@@ -264,6 +266,7 @@ async function loadTeacherClasses(){
   if(error){teacherMessage("班級載入失敗："+error.message,true);const sel=$("prompt-class-select");if(sel)sel.replaceChildren(new Option("班級載入失敗，請重新整理", ""));return;}
   teacherClasses=data||[];
   renderPromptClassOptions();
+  renderUsageClassOptions();
   $("teacher-classes").innerHTML=teacherClasses.length?teacherClasses.map(c=>`<div class="teacher-class"><h3>${escapeHtml(c.name)}</h3><p>邀請碼：<strong>${escapeHtml(c.join_code)}</strong></p><div class="teacher-actions"><button class="small" data-teacher-class="${c.id}">查看學生</button><button class="small secondary" data-copy-code="${c.id}">複製邀請碼</button><button class="small danger" data-delete-class="${c.id}">刪除班級</button></div></div>`).join(""):'<p class="muted">目前沒有建立的班級。可以在上方新增班級，並將邀請碼提供給學生。</p>';
   document.querySelectorAll("[data-teacher-class]").forEach(b=>b.addEventListener("click",()=>showTeacherClass(b.dataset.teacherClass)));
   document.querySelectorAll("[data-delete-class]").forEach(b=>b.addEventListener("click",()=>deleteTeacherClass(b.dataset.deleteClass)));
@@ -671,7 +674,6 @@ $("chat-share-teacher").addEventListener("change",async e=>{
  if(error){e.target.checked=!checked;$("chat-share-status").textContent="設定失敗："+error.message;return;}
  $("chat-share-status").textContent=checked?"已同意教師查看本專題對話":"已取消教師查看授權";
 });
-$("chat-stage-filter").addEventListener("change",renderChatHistory);
 $("chat-export-btn").addEventListener("click",async()=>{
  if(!currentProject)return;
  const {data,error}=await db.from("messages").select("created_at,stage,role,content").eq("project_id",currentProject.id).order("created_at",{ascending:true}).limit(10000);
@@ -681,4 +683,26 @@ $("chat-export-btn").addEventListener("click",async()=>{
  const csv='\ufeff'+rows.map(row=>row.map(quote).join(',')).join('\r\n');
  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");
  a.href=url;a.download="探究對話歷程.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
+
+// 班級 AI 使用量：教師只可讀取自己班級的彙總數據。
+function renderUsageClassOptions(){
+ const sel=$("usage-class-select");if(!sel)return;
+ const previous=sel.value;sel.replaceChildren(new Option(teacherClasses.length?"請選擇班級":"目前沒有班級",""));
+ for(const c of teacherClasses)sel.add(new Option(c.name,c.id));
+ if(teacherClasses.some(c=>c.id===previous))sel.value=previous;
+ else if(teacherClasses.length)sel.value=teacherClasses[0].id;
+}
+$("usage-refresh-btn").addEventListener("click",async()=>{
+ const classId=$("usage-class-select").value,days=Number($("usage-days").value);
+ if(!classId){setStatus("usage-status","請先選擇班級",true);return;}
+ setStatus("usage-status","正在讀取使用量…");$("usage-results").replaceChildren();
+ const {data,error}=await db.rpc("teacher_ai_usage_summary",{p_class:classId,p_days:days});
+ if(error){setStatus("usage-status","讀取失敗："+error.message,true);return;}
+ const v=data||{};const summary=document.createElement("p");
+ summary.textContent=`呼叫 ${v.calls||0} 次｜輸入 ${Number(v.input_tokens||0).toLocaleString()} tokens｜輸出 ${Number(v.output_tokens||0).toLocaleString()} tokens｜活躍學生 ${v.active_students||0} 人`;
+ $("usage-results").appendChild(summary);
+ const ul=document.createElement("ul");
+ for(const x of v.by_stage||[]){const li=document.createElement("li");li.textContent=`${stageNames[x.stage]?.[0]||x.stage}：${x.calls} 次`;ul.appendChild(li);}
+ $("usage-results").appendChild(ul);setStatus("usage-status","統計完成（僅含升級後紀錄）");
 });
