@@ -36,14 +36,19 @@ const groupRecord=(rows,k)=>({status:groupDone(rows,k)?"completed":rows.some(r=>
 function setStatus(id, msg, error=false){ const el=$(id); el.textContent=msg; el.classList.toggle("error",error); }
 function showApp(on){ if(!on){approvedTeacherId=null;roleCheckVersion++;} $("teacher-mode-btn").classList.add("hidden"); $("auth-panel").classList.toggle("hidden",on); $("app-panel").classList.toggle("hidden",!on); $("class-toolbar").classList.toggle("hidden",!on); $("teacher-panel").classList.add("hidden"); $("logout-btn").classList.toggle("hidden",!on); }
 // AI output is untrusted. Keep stored text intact and render only in the UI.
+const pendingAiFormatting=new Map();
 function renderAiText(el,value){
   const source=String(value??'');el.textContent=source;el.classList.remove('ai-rich-text');
-  if(!window.marked?.parse||!window.DOMPurify?.sanitize||!window.katex?.render)return;
+  if(!window.marked?.parse||!window.DOMPurify?.sanitize||!window.katex?.render){
+    pendingAiFormatting.set(el,source);return;
+  }
+  pendingAiFormatting.delete(el);
   try{
     const formulas=[];let prefix='AIMATHPLACEHOLDER';while(source.includes(prefix))prefix+='X';
     // Protect code spans/fences and math before Markdown consumes backslashes or table pipes.
-    const pattern=/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\1[ \t]*$|(?![\s\S]))|(`+)[^\n]*?\2|\\\[[\s\S]*?\\\]|\\\([^\n]*?\\\)|\$\$[\s\S]*?\$\$|(?<![\\$])\$(?![\s$])(?:\\.|[^\n$\\])+?(?<!\s)\$(?!\$)/gm;
-    const prepared=source.replace(pattern,match=>{
+    const pattern=/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\1[ \t]*$|(?![\s\S]))|(`+)[^\n]*?\2|\\\[[\s\S]*?\\\]|\\\([^\n]*?\\\)|\$\$[\s\S]*?\$\$|\$(?![\s$])(?:\\.|[^\n$\\])+?\$(?!\$)/gm;
+    const prepared=source.replace(pattern,(match,fence,code,offset)=>{
+      if(match.startsWith("$")&&!match.startsWith("$$")&&((offset>0&&/[\\$]/.test(source[offset-1]))||/\s/.test(match[match.length-2])))return match;
       if(/^ {0,3}(?:`|~{3,})/.test(match))return match;
       const display=match.startsWith('\\[')||match.startsWith('$$');
       const length=match.startsWith('\\')||display?2:1;
@@ -54,7 +59,7 @@ function renderAiText(el,value){
     const walker=document.createTreeWalker(fragment,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
     const tokenPattern=new RegExp(prefix+'(\\d+)END','g');
     for(const node of nodes){const text=node.nodeValue;tokenPattern.lastIndex=0;if(!tokenPattern.test(text))continue;tokenPattern.lastIndex=0;const replacement=document.createDocumentFragment();let offset=0;
-      for(const m of text.matchAll(tokenPattern)){replacement.append(document.createTextNode(text.slice(offset,m.index)));const f=formulas[Number(m[1])];const span=document.createElement('span');span.className=f.display?'ai-math-display':'ai-math-inline';
+      let m;while((m=tokenPattern.exec(text))!==null){replacement.append(document.createTextNode(text.slice(offset,m.index)));const f=formulas[Number(m[1])];const span=document.createElement('span');span.className=f.display?'ai-math-display':'ai-math-inline';
         try{window.katex.render(f.tex,span,{displayMode:f.display,throwOnError:true,trust:false,maxExpand:1000,maxSize:20});}catch{span.textContent=f.original;}
         replacement.append(span);offset=m.index+m[0].length;
       }replacement.append(document.createTextNode(text.slice(offset)));node.replaceWith(replacement);
@@ -62,9 +67,14 @@ function renderAiText(el,value){
     // Keep links inert: AI-generated URLs need not be opened from the coach.
     fragment.querySelectorAll('a').forEach(a=>a.replaceWith(...a.childNodes));
     fragment.querySelectorAll('table').forEach(table=>{const wrap=document.createElement('div');wrap.className='ai-table-scroll';table.replaceWith(wrap);wrap.append(table);});
-    el.replaceChildren(fragment);el.classList.add('ai-rich-text');
+    el.textContent="";el.appendChild(fragment);el.classList.add('ai-rich-text');
   }catch(e){el.textContent=source;console.warn('AI formatting unavailable',e);}
 }
+function retryAiFormatting(){
+  if(!window.marked?.parse||!window.DOMPurify?.sanitize||!window.katex?.render)return;
+  for(const [el,source] of pendingAiFormatting){pendingAiFormatting.delete(el);if(el.isConnected&&el.textContent===source)renderAiText(el,source);}
+}
+window.addEventListener('ai-format-ready',retryAiFormatting);
 function escapeHtml(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 
 async function init(){
