@@ -35,6 +35,36 @@ const fieldId=k=>k==="question"?"question-work":k==="hypothesis"?"hypothesis-wor
 const groupRecord=(rows,k)=>({status:groupDone(rows,k)?"completed":rows.some(r=>groupKeys(k).includes(r.stage)&&r.content)?"in_progress":"not_started",content:groupKeys(k).map(key=>{const r=rows.find(x=>x.stage===key);return k==="topic"?({topic:"主題發想",question:"研究問題",hypothesis:"科學假設"}[key]+"：\n"+(r?.content||"尚無成果紀錄")):r?.content||"";}).join("\n\n")});
 function setStatus(id, msg, error=false){ const el=$(id); el.textContent=msg; el.classList.toggle("error",error); }
 function showApp(on){ if(!on){approvedTeacherId=null;roleCheckVersion++;} $("teacher-mode-btn").classList.add("hidden"); $("auth-panel").classList.toggle("hidden",on); $("app-panel").classList.toggle("hidden",!on); $("class-toolbar").classList.toggle("hidden",!on); $("teacher-panel").classList.add("hidden"); $("logout-btn").classList.toggle("hidden",!on); }
+// AI output is untrusted. Keep stored text intact and render only in the UI.
+function renderAiText(el,value){
+  const source=String(value??'');el.textContent=source;el.classList.remove('ai-rich-text');
+  if(!window.marked?.parse||!window.DOMPurify?.sanitize||!window.katex?.render)return;
+  try{
+    const formulas=[];let prefix='AIMATHPLACEHOLDER';while(source.includes(prefix))prefix+='X';
+    // Protect code spans/fences and math before Markdown consumes backslashes or table pipes.
+    const pattern=/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?(?:^ {0,3}\1[ \t]*$|(?![\s\S]))|(`+)[^\n]*?\2|\\\[[\s\S]*?\\\]|\\\([^\n]*?\\\)|\$\$[\s\S]*?\$\$|(?<![\\$])\$(?![\s$])(?:\\.|[^\n$\\])+?(?<!\s)\$(?!\$)/gm;
+    const prepared=source.replace(pattern,match=>{
+      if(/^ {0,3}(?:`|~{3,})/.test(match))return match;
+      const display=match.startsWith('\\[')||match.startsWith('$$');
+      const length=match.startsWith('\\')||display?2:1;
+      const token=prefix+formulas.length+'END';formulas.push({tex:match.slice(length,-length),display,original:match});return token;
+    });
+    const html=window.marked.parse(prepared,{gfm:true,breaks:true,async:false});
+    const fragment=window.DOMPurify.sanitize(html,{RETURN_DOM_FRAGMENT:true,ALLOWED_TAGS:['p','br','strong','b','em','i','del','s','h1','h2','h3','h4','h5','h6','ul','ol','li','blockquote','pre','code','hr','table','thead','tbody','tr','th','td','a'],ALLOWED_ATTR:['start','align'],ALLOW_DATA_ATTR:false,ALLOW_ARIA_ATTR:false});
+    const walker=document.createTreeWalker(fragment,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);
+    const tokenPattern=new RegExp(prefix+'(\\d+)END','g');
+    for(const node of nodes){const text=node.nodeValue;tokenPattern.lastIndex=0;if(!tokenPattern.test(text))continue;tokenPattern.lastIndex=0;const replacement=document.createDocumentFragment();let offset=0;
+      for(const m of text.matchAll(tokenPattern)){replacement.append(document.createTextNode(text.slice(offset,m.index)));const f=formulas[Number(m[1])];const span=document.createElement('span');span.className=f.display?'ai-math-display':'ai-math-inline';
+        try{window.katex.render(f.tex,span,{displayMode:f.display,throwOnError:true,trust:false,maxExpand:1000,maxSize:20});}catch{span.textContent=f.original;}
+        replacement.append(span);offset=m.index+m[0].length;
+      }replacement.append(document.createTextNode(text.slice(offset)));node.replaceWith(replacement);
+    }
+    // Keep links inert: AI-generated URLs need not be opened from the coach.
+    fragment.querySelectorAll('a').forEach(a=>a.replaceWith(...a.childNodes));
+    fragment.querySelectorAll('table').forEach(table=>{const wrap=document.createElement('div');wrap.className='ai-table-scroll';table.replaceWith(wrap);wrap.append(table);});
+    el.replaceChildren(fragment);el.classList.add('ai-rich-text');
+  }catch(e){el.textContent=source;console.warn('AI formatting unavailable',e);}
+}
 function escapeHtml(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 
 async function init(){
@@ -181,7 +211,7 @@ function renderChatHistory(){
 function addBubble(role,text,stage){
   const el=document.createElement("div");el.className="bubble "+role;
   if(stage){const tag=document.createElement("small");tag.className="chat-stage-label";tag.textContent=stageNames[stage]?.[0]||stage;el.appendChild(tag);}
-  const body=document.createElement("div");body.textContent=text;el.appendChild(body);
+  const body=document.createElement("div");if(role==="ai")renderAiText(body,text);else body.textContent=text;el.appendChild(body);
   $("chat-log").appendChild(el);$("chat-log").scrollTop=$("chat-log").scrollHeight;
 }
 async function createProject(){
@@ -392,8 +422,8 @@ $("prompt-preview-run").addEventListener("click",async()=>{
     }});
     if(error)throw new Error(error.message||"Edge Function 呼叫失敗");
     if(data?.error)throw new Error(data.error);
-    $("prompt-preview-default").textContent=data.default_reply||"未取得回覆";
-    $("prompt-preview-custom").textContent=data.custom_reply||"未取得回覆";
+    renderAiText($("prompt-preview-default"),data.default_reply||"未取得回覆");
+    renderAiText($("prompt-preview-custom"),data.custom_reply||"未取得回覆");
     setStatus("prompt-preview-status","測試完成。此操作不會儲存草稿；如需套用，請按上方「儲存本班 AI 設定」。");
   }catch(e){setStatus("prompt-preview-status","測試失敗："+(e.message||String(e)),true);
     $("prompt-preview-default").textContent="測試未完成";$("prompt-preview-custom").textContent="測試未完成";
@@ -454,7 +484,7 @@ async function showTeacherClass(classId){
     status.textContent=`已載入 ${data.length} 則訊息`;
     for(const m of data.sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))){const item=document.createElement("div");item.className="teacher-chat-item";
       const head=document.createElement("strong");head.textContent=(m.role==="assistant"?"AI":"學生")+" · "+(stageNames[m.stage]?.[0]||"未分類")+" · "+new Date(m.created_at).toLocaleString("zh-TW");
-      const body=document.createElement("p");body.textContent=messageText(m);item.append(head,body);out.append(item);}
+      const body=document.createElement("div");if(m.role==="assistant")renderAiText(body,messageText(m));else{body.textContent=messageText(m);body.style.whiteSpace="pre-wrap";}item.append(head,body);out.append(item);}
   });
   const aiBox=document.createElement("section");aiBox.className="analytics-panel ai-diagnosis";
   aiBox.innerHTML='<h3>AI 教師輔助評量</h3><p class="muted tiny">僅供教師參考，不會修改正式評分。</p><button type="button" class="small secondary">產生評量建議</button><p class="status"></p><div class="ai-diagnosis-output"></div>';
@@ -591,6 +621,7 @@ async function loadDiagnosisHistory(projectId,mode,el){
  const anyRatings=ordered.some(d=>growthKeys.some(k=>d.ratings_snapshot?.[k]!=null));
  const chart=anyRatings?`<div class="growth-chart"><svg viewBox="0 0 600 195" role="img" aria-label="教師已發布評量的歷次快照，縱軸一至四級">${[1,2,3,4].map(v=>`<line x1="32" y1="${150-(v-1)*38}" x2="565" y2="${150-(v-1)*38}" stroke="#cdd7df"/><text x="12" y="${154-(v-1)*38}" font-size="12" fill="currentColor">${v}</text>`).join("")}${lines}<text x="36" y="183" font-size="11" fill="currentColor">${new Date(ordered[0].created_at).toLocaleDateString("zh-TW")}</text><text x="470" y="183" font-size="11" fill="currentColor">${new Date(ordered.at(-1).created_at).toLocaleDateString("zh-TW")}</text></svg><div class="growth-legend">${growthKeys.map((k,i)=>`<span><b style="color:${["#2875ba","#d17a20","#248a69","#9b59b6"][i]}">●</b> ${growthLabels[k]}</span>`).join("")}</div><p class="muted tiny">各點為診斷當時已發布教師評量的平均等級快照；缺少評量時不補零。同一評量未更新時，重複診斷可能呈現相同數值。</p></div>`:'<p class="muted">目前尚無已發布教師評量，無法繪製能力趨勢；仍可查看文字診斷歷程。</p>';
  el.innerHTML='<div class="ai-score-visualization"></div><details class="diagnosis-entry"><summary>學習歷程教師評量（1–4 級，與 AI 分數分開）</summary>'+chart+'</details>'+data.map(d=>`<details class="diagnosis-entry"><summary>${new Date(d.created_at).toLocaleString("zh-TW")} · AI 診斷</summary><div class="ai-diagnosis-output">${escapeHtml(d.reply)}</div></details>`).join("");
+ el.querySelectorAll(".ai-diagnosis-output").forEach((node,i)=>renderAiText(node,data[i].reply));
  renderAiScoreCharts(el.querySelector(".ai-score-visualization"),ordered);
 }
 async function runDiagnosis(projectId,mode,button,status,output,historyEl){
@@ -606,7 +637,7 @@ async function runDiagnosis(projectId,mode,button,status,output,historyEl){
   if(data?.error)throw new Error(data.error);
   const reply=data?.reply;
   if(!reply)throw new Error("AI 沒有產生診斷結果");
-  output.textContent=reply;
+  renderAiText(output,reply);
   const saved=await db.from("diagnosis_history").insert({project_id:projectId,requester_id:currentUser.id,mode,reply,ai_scores:data.scores??null,score_version:data.score_version??null});
   if(saved.error){status.textContent="診斷完成，但歷史紀錄儲存失敗："+saved.error.message;return;}
   status.textContent="診斷完成，已儲存歷史紀錄。AI 建議僅供參考。";
@@ -769,6 +800,7 @@ function renderAiScoreCharts(el,ordered){
  function update(){const a=aiScoreValues(records[Number(base.value)]),b=aiScoreValues(records[Number(compare.value)]),same=base.value===compare.value;
  const radar=`<svg viewBox="0 0 360 310" role="img" aria-label="四階段 AI 診斷雷達圖">${[20,40,60,80,100].map(n=>`<polygon points="${poly([n,n,n,n])}" fill="none" stroke="#cbd5e1"/><text x="185" y="${150-n-3}" font-size="9" fill="#64748b">${n}</text>`).join('')}<path d="M180 50V250 M80 150H280" stroke="#cbd5e1"/>${same?'':draw(a,'#64748b',true)}${draw(b,'#087e83',false)}<g fill="currentColor" font-size="12" text-anchor="middle"><text x="180" y="22">發現問題</text><text x="320" y="140">規劃與</text><text x="320" y="156">研究</text><text x="180" y="282">論證與建模</text><text x="40" y="140">結論與</text><text x="40" y="156">反思</text></g></svg>`;
  el.querySelector('[data-score-comparison]').innerHTML=`<div class="ai-score-radar">${radar}</div><div class="growth-legend"><span style="color:#64748b">● 基準（虛線）</span><span style="color:#087e83">● 比較（實線）</span></div><div class="analytics-stats"><div><span>基準平均</span><strong>${fmt(aiScoreMean(a))}</strong></div><div><span>比較平均</span><strong>${fmt(aiScoreMean(b))}</strong></div><div><span>分數變化</span><strong>${same?'—':delta(aiScoreMean(a),aiScoreMean(b))}</strong></div></div><div class="ai-score-table-wrap"><table class="teacher-table"><thead><tr><th>能力面向</th><th>基準</th><th>比較</th><th>變化</th></tr></thead><tbody>${AI_SCORE_LABELS.map((l,i)=>`<tr><td>${l}</td><td>${fmt(a[i])}</td><td>${fmt(b[i])}</td><td>${same?'—':delta(a[i],b[i])}</td></tr>`).join('')}</tbody></table></div><p class="muted tiny">${same?'目前比較同一次診斷，不計算成長。':'不同日期的成果證據可能不同，請搭配文字診斷解讀。'} 缺分時雷達圖只顯示可評分的點。</p><details class="diagnosis-entry"><summary>查看比較診斷的 AI 建議</summary><div class="ai-diagnosis-output">${escapeHtml(records[Number(compare.value)].reply)}</div></details>`;
+ renderAiText(el.querySelector("[data-score-comparison] .ai-diagnosis-output"),records[Number(compare.value)].reply);
  }
  base.addEventListener('change',update);compare.addEventListener('change',update);update();
  const colors=['#2563eb','#b45309','#087e83','#9333ea','#17233b'];const labels=[...AI_SCORE_LABELS,'平均'];
