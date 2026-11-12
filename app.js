@@ -333,8 +333,9 @@ async function loadTeacherClasses(){
   teacherClasses=data||[];
   renderPromptClassOptions();
   renderUsageClassOptions();
-  $("teacher-classes").innerHTML=teacherClasses.length?teacherClasses.map(c=>`<div class="teacher-class"><h3>${escapeHtml(c.name)}</h3><p>邀請碼：<strong>${escapeHtml(c.join_code)}</strong></p><div class="teacher-actions"><button class="small" data-teacher-class="${c.id}">查看學生</button><button class="small secondary" data-copy-code="${c.id}">複製邀請碼</button><button class="small danger" data-delete-class="${c.id}">刪除班級</button></div></div>`).join(""):'<p class="muted">目前沒有建立的班級。可以在上方新增班級，並將邀請碼提供給學生。</p>';
+  $("teacher-classes").innerHTML=teacherClasses.length?teacherClasses.map(c=>`<div class="teacher-class"><h3>${escapeHtml(c.name)}</h3><p>邀請碼：<strong>${escapeHtml(c.join_code)}</strong></p><div class="teacher-actions"><button class="small" data-teacher-class="${c.id}">查看學生</button><button class="small secondary" data-email-enroll="${c.id}">Email 加入學生</button><button class="small secondary" data-copy-code="${c.id}">複製邀請碼</button><button class="small danger" data-delete-class="${c.id}">刪除班級</button></div></div>`).join(""):'<p class="muted">目前沒有建立的班級。可以在上方新增班級，並將邀請碼提供給學生。</p>';
   document.querySelectorAll("[data-teacher-class]").forEach(b=>b.addEventListener("click",()=>showTeacherClass(b.dataset.teacherClass)));
+  document.querySelectorAll("[data-email-enroll]").forEach(b=>b.addEventListener("click",()=>openEmailEnrollment(b.dataset.emailEnroll)));
   document.querySelectorAll("[data-delete-class]").forEach(b=>b.addEventListener("click",()=>deleteTeacherClass(b.dataset.deleteClass)));
   document.querySelectorAll("[data-copy-code]").forEach(b=>b.addEventListener("click",async()=>{
     const c=teacherClasses.find(x=>x.id===b.dataset.copyCode);
@@ -472,10 +473,11 @@ async function showTeacherClass(classId){
  const summary=buildClassSummary(members||[],projectsForClass,stages,reviews);
 
  detail.innerHTML=`<h2>${escapeHtml(c.name)} · 學生專題</h2><p class="muted">${ids.length} 位學生，${projectsForClass.length} 個專題。僅供教師檢視，不可修改學生成果。</p>`+
- `<div class="analytics-panel">${summary}</div><section class="analytics-panel" id="research-dashboard"><h3>研究分析與資料匯出</h3><p class="muted">讀取已發布教師評量的歷次快照，按專題比較最早與最新兩次有評分的紀錄。匯出含學生識別資訊，僅供核准的班級教師及授權研究用途。</p><button type="button" id="research-analyze-btn" class="small secondary">分析班級能力變化</button><div id="research-analysis-output"></div><p><button type="button" id="research-full-export" class="small secondary">匯出完整研究 CSV（含學生資訊）</button></p><p id="research-export-status" class="status"></p></section>`+
+ `<section class="analytics-panel"><h3>班級學生名單</h3><p class="muted tiny">包含尚未建立專題的學生。</p><button type="button" class="small secondary" id="class-enroll-more">Email 加入學生</button><ul>${(members||[]).map(m=>`<li>${escapeHtml(m.display_name)}</li>`).join("")||"<li>尚無學生</li>"}</ul></section><div class="analytics-panel">${summary}</div><section class="analytics-panel" id="research-dashboard"><h3>研究分析與資料匯出</h3><p class="muted">讀取已發布教師評量的歷次快照，按專題比較最早與最新兩次有評分的紀錄。匯出含學生識別資訊，僅供核准的班級教師及授權研究用途。</p><button type="button" id="research-analyze-btn" class="small secondary">分析班級能力變化</button><div id="research-analysis-output"></div><p><button type="button" id="research-full-export" class="small secondary">匯出完整研究 CSV（含學生資訊）</button></p><p id="research-export-status" class="status"></p></section>`+
  (projectsForClass.length?`<table class="teacher-table"><thead><tr><th>學生</th><th>專題</th><th>完成進度</th><th>最近更新</th><th>操作</th></tr></thead><tbody>`+
  projectsForClass.map(p=>{const n=completedCount(stages.filter(x=>x.project_id===p.id));
  return `<tr><td>${escapeHtml(memberMap.get(p.user_id)||"未命名")}</td><td>${escapeHtml(p.title)}</td><td>${n} / 4</td><td>${new Date(p.updated_at).toLocaleDateString("zh-TW")}</td><td><button class="small secondary" data-inspect="${p.id}">查看成果</button></td></tr>`;}).join("")+`</tbody></table>`:'<p class="muted">目前沒有學生專題。學生加入班級並建立專題後，會顯示在這裡。</p>')+`<div id="teacher-project-output"></div>`;
+ detail.querySelector("#class-enroll-more")?.addEventListener("click",()=>openEmailEnrollment(classId));
  detail.querySelector("#research-full-export")?.addEventListener("click",()=>exportClassResearch(classId,c.name,projectsForClass));
  detail.querySelector("#research-analyze-btn")?.addEventListener("click",()=>runClassResearch(classId,projectsForClass));
  detail.querySelectorAll("[data-inspect]").forEach(b=>b.addEventListener("click",()=>{
@@ -818,3 +820,26 @@ function renderAiScoreCharts(el,ordered){
  const lines=labels.map((label,k)=>{let segment=[],paths=[];const flush=()=>{if(segment.length>1)paths.push(`<polyline points="${segment.join(' ')}" fill="none" stroke="${colors[k]}" stroke-width="${k===4?3:1.8}"/>`);segment=[];};const dots=records.map((d,i)=>{const v=aiScoreValues(d),n=k===4?aiScoreMean(v):v[k];if(n===null){flush();return '';}segment.push(`${x(i)},${y(n)}`);return `<circle cx="${x(i)}" cy="${y(n)}" r="3" fill="${colors[k]}"><title>第 ${i+1} 次 · ${label}：${n.toFixed(1)}</title></circle>`;}).join('');flush();return paths.join('')+dots;}).join('');
  el.querySelector('[data-score-trend]').innerHTML=`<div class="growth-chart"><svg viewBox="0 0 600 230" role="img" aria-label="歷次 AI 診斷四面向及平均分數趨勢">${[0,25,50,75,100].map(n=>`<line x1="40" x2="560" y1="${y(n)}" y2="${y(n)}" stroke="#d6e1e8"/><text x="8" y="${y(n)+4}" font-size="11" fill="currentColor">${n}</text>`).join('')}${lines}${records.map((d,i)=>i===0||i===records.length-1||records.length<=8?`<text x="${x(i)}" y="210" font-size="10" text-anchor="middle" fill="currentColor">${i+1}</text>`:'').join('')}</svg><div class="growth-legend">${labels.map((l,i)=>`<span><b style="color:${colors[i]}">●</b> ${l}</span>`).join('')}</div><p class="muted tiny">橫軸為有至少一項有效分數的新版診斷次序；缺分處斷線。共 ${records.length} 次可視覺化診斷。</p></div>`;
 }
+
+let enrollmentClass=null;
+function openEmailEnrollment(id){
+ const c=teacherClasses.find(x=>x.id===id);if(!c||!currentUser||approvedTeacherId!==currentUser.id)return;
+ enrollmentClass=id;$("email-enroll-class").textContent=c.name;$("email-enroll-input").value="";$("email-enroll-results").replaceChildren();setStatus("email-enroll-status","");$("email-enroll-dialog").showModal();
+}
+$("email-enroll-close").onclick=()=>$("email-enroll-dialog").close();
+$("email-enroll-submit").onclick=async()=>{
+ const id=enrollmentClass, user=currentUser?.id, btn=$("email-enroll-submit"), input=$("email-enroll-input");
+ if(!id||!user||approvedTeacherId!==user||btn.disabled)return;
+ const emails=[...new Set(input.value.split(/[\s,;，；]+/).map(x=>x.trim().toLowerCase()).filter(Boolean))];
+ if(!emails.length||emails.length>50){setStatus("email-enroll-status","請輸入 1 至 50 個電子郵件",true);return;}
+ if(!confirm(`確定將 ${emails.length} 個帳號加入「${$("email-enroll-class").textContent}」？`))return;
+ btn.disabled=true;input.disabled=true;$("email-enroll-close").disabled=true;$("email-enroll-results").replaceChildren();setStatus("email-enroll-status","處理中…");
+ try{const {data,error}=await db.rpc("teacher_enroll_by_email",{p_class:id,p_emails:emails});if(error)throw error;if(currentUser?.id!==user)return;
+ const labels={added:"已加入",already:"已在班級",not_found:"查無已驗證的註冊帳號",invalid:"Email 格式錯誤",not_student:"不可加入教師帳號"};
+ for(const r of data||[]){const line=document.createElement("p");line.textContent=r.email+" — "+(labels[r.result]||"未知結果");$("email-enroll-results").append(line);}
+ setStatus("email-enroll-status",`新增 ${(data||[]).filter(r=>r.result==="added").length} 位；其餘請查看個別結果。`);await showTeacherClass(id);
+ }catch(e){setStatus("email-enroll-status","加入失敗："+e.message,true);}finally{btn.disabled=false;input.disabled=false;$("email-enroll-close").disabled=false;}
+};
+$("email-enroll-dialog").addEventListener("cancel",e=>{if($("email-enroll-submit").disabled)e.preventDefault();});
+$("my-classes-close").onclick=()=>$("my-classes-dialog").close();
+$("my-classes-btn").onclick=async()=>{const out=$("my-classes-list");out.textContent="讀取中…";$("my-classes-dialog").showModal();const user=currentUser?.id;try{const {data,error}=await db.rpc("my_inquiry_classes");if(error)throw error;if(currentUser?.id!==user)return;out.replaceChildren();if(!data?.length)out.textContent="尚未加入班級";else for(const c of data){const p=document.createElement("p");p.textContent=c.class_name;out.append(p);}}catch(e){out.textContent="讀取失敗："+e.message;}};
