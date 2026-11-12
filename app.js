@@ -15,9 +15,9 @@ const stageNames = {
   topic: ["發現問題","先從你觀察到的現象或感到好奇的事情開始。"],
   question: ["形成研究問題","把興趣轉化成清楚、可觀察、可探究的問題。"],
   hypothesis: ["建立科學假設","提出可被證據支持或推翻的預測，並說明理由。"],
-  design: ["研究與規劃","思考自變因、應變因、控制變因、器材與步驟。"],
+  design: ["規劃與研究","思考自變因、應變因、控制變因、器材與步驟。"],
   data: ["論證與建模","檢視資料品質、趨勢、圖表與可能的不確定度。"],
-  discussion: ["結論反思","連結證據與主張，討論限制、誤差與後續研究。"]
+  discussion: ["結論與反思","連結證據與主張，討論限制、誤差與後續研究。"]
 };
 
 const imageBucket="inquiry-research-images";
@@ -440,7 +440,7 @@ async function showTeacherClass(classId){
  detail.querySelector("#research-analyze-btn")?.addEventListener("click",()=>runClassResearch(classId,projectsForClass));
  detail.querySelectorAll("[data-inspect]").forEach(b=>b.addEventListener("click",()=>{
   const p=projectsForClass.find(x=>x.id===b.dataset.inspect);if(!p)return;
-  const labels={topic:"發現問題",design:"研究與規劃",data:"論證與建模",discussion:"結論反思"};
+  const labels={topic:"發現問題",design:"規劃與研究",data:"論證與建模",discussion:"結論與反思"};
   $("teacher-project-output").innerHTML=`<h3>${escapeHtml(memberMap.get(p.user_id)||"學生")} · ${escapeHtml(p.title)}</h3><p class="muted">${escapeHtml(p.description||"尚未填寫研究簡介")}</p>`+
   Object.entries(labels).map(([key,label])=>{const r=groupRecord(stages.filter(x=>x.project_id===p.id),key);const state=r?.status==="completed"?"已完成":r?.status==="in_progress"?"進行中":"尚未開始";
   return `<details class="teacher-stage"><summary>${escapeHtml(label)} · ${state}</summary><div class="teacher-work">${escapeHtml(r?.content||"尚無成果紀錄")}</div>${groupKeys(key).map(k=>`<div class="teacher-review-slot" data-review-stage="${k}"><\/div>`).join("")}${key==="data"?'<div id="teacher-images" class="research-images"></div>':""}</details>`;}).join("");
@@ -476,7 +476,7 @@ $("join-submit-btn").addEventListener("click",joinTeacherClass);
 
 
 // 第四階段：教師評量、草稿發布及學生回饋（與 AI 對話分開儲存）
-const rubricLabels={conceptual_reasoning:"科學概念與推理",inquiry_design:"探究方法與變因控制",evidence_analysis:"證據分析與解釋",reflection:"反思與改進"};
+const rubricLabels={conceptual_reasoning:"發現問題",inquiry_design:"規劃與研究",evidence_analysis:"論證與建模",reflection:"結論與反思"};
 const rubricLevels={1:"1 起步：需要明確協助",2:"2 發展：已有初步表現",3:"3 熟練：能獨立且合理完成",4:"4 精進：能深入解釋與改進"};
 let studentFeedback=[];
 async function loadStudentFeedback(){
@@ -535,11 +535,11 @@ function radarSVG(means){
  const axes=angles.map((_,i)=>{const [x,y]=point(i,1);return `<line x1="${cx}" y1="${cy}" x2="${x}" y2="${y}" stroke="currentColor" stroke-opacity=".25"/>`;}).join('');
  const values=analyticsKeys.map(k=>means[k]);
  const shape=values.every(v=>v===null)?'':`<polygon points="${values.map((v,i)=>point(i,(v??0)/4).join(',')).join(' ')}" fill="#168cbd" fill-opacity=".22" stroke="#168cbd" stroke-width="2.5"/>`;
- const labels=['科學概念與推理','探究設計','證據分析','反思改進'];
+ const labels=analyticsKeys.map(k=>rubricLabels[k]);
  const coords=[[140,20],[239,137],[140,252],[41,137]];
  return `<svg viewBox="0 0 280 270" role="img" aria-label="四項探究能力雷達圖，1 至 4 級" class="radar-svg">${levels}${axes}${shape}${labels.map((label,i)=>`<text x="${coords[i][0]}" y="${coords[i][1]}" text-anchor="middle" font-size="11" fill="currentColor">${label}</text>`).join('')}</svg>`;
 }
-function analyticsMarkup(rows){const means=rubricMeans(rows);return `<div class="radar-figure">${radarSVG(means)}</div><div class="radar-values">${analyticsKeys.map(k=>`<div><strong>${escapeHtml(rubricLabels[k])}</strong><span>${means[k]===null?'尚未評量':means[k].toFixed(2)+' / 4'}</span></div>`).join('')}<p class="muted tiny">共 ${rows.length} 筆已發布評量；同一教師對不同階段的評分各算一筆。</p></div>`;}
+function analyticsMarkup(rows){const means=rubricMeans(rows);return `<div class="radar-figure">${radarSVG(means)}</div><div class="radar-values">${analyticsKeys.map(k=>`<div><strong>${escapeHtml(rubricLabels[k])}</strong><span>${means[k]===null?'尚未評量':means[k].toFixed(2)+' / 4'}</span></div>`).join('')}<p class="muted tiny">共 ${rows.length} 筆已發布評量；同一教師對不同階段的評分各算一筆。舊評量沿用原欄位分數，未重新評分。</p></div>`;}
 function renderStudentAnalytics(){const el=$("student-radar");if(!el)return;el.innerHTML=analyticsMarkup(studentFeedback||[]);}
 function buildClassSummary(members,ps,stages,reviews){
  const completed=ps.map(p=>completedCount(stages.filter(s=>s.project_id===p.id)));
@@ -570,7 +570,7 @@ $("student-report-btn").addEventListener('click',async()=>{
 
 // 第七階段：AI 診斷與已發布教師評量快照，兩者明確分離。
 const growthKeys=["conceptual_reasoning","inquiry_design","evidence_analysis","reflection"];
-const growthLabels={conceptual_reasoning:"科學概念與推理",inquiry_design:"探究方法與變因控制",evidence_analysis:"證據分析與解釋",reflection:"反思與改進"};
+const growthLabels=rubricLabels;
 async function loadDiagnosisHistory(projectId,mode,el){
  if(!el)return;
  el.textContent="讀取歷史紀錄中…";
@@ -590,7 +590,7 @@ async function loadDiagnosisHistory(projectId,mode,el){
  }).join("");
  const anyRatings=ordered.some(d=>growthKeys.some(k=>d.ratings_snapshot?.[k]!=null));
  const chart=anyRatings?`<div class="growth-chart"><svg viewBox="0 0 600 195" role="img" aria-label="教師已發布評量的歷次快照，縱軸一至四級">${[1,2,3,4].map(v=>`<line x1="32" y1="${150-(v-1)*38}" x2="565" y2="${150-(v-1)*38}" stroke="#cdd7df"/><text x="12" y="${154-(v-1)*38}" font-size="12" fill="currentColor">${v}</text>`).join("")}${lines}<text x="36" y="183" font-size="11" fill="currentColor">${new Date(ordered[0].created_at).toLocaleDateString("zh-TW")}</text><text x="470" y="183" font-size="11" fill="currentColor">${new Date(ordered.at(-1).created_at).toLocaleDateString("zh-TW")}</text></svg><div class="growth-legend">${growthKeys.map((k,i)=>`<span><b style="color:${["#2875ba","#d17a20","#248a69","#9b59b6"][i]}">●</b> ${growthLabels[k]}</span>`).join("")}</div><p class="muted tiny">各點為診斷當時已發布教師評量的平均等級快照；缺少評量時不補零。同一評量未更新時，重複診斷可能呈現相同數值。</p></div>`:'<p class="muted">目前尚無已發布教師評量，無法繪製能力趨勢；仍可查看文字診斷歷程。</p>';
- el.innerHTML='<div class="ai-score-visualization"></div><details class="diagnosis-entry"><summary>已發布教師評量快照（1–4 級，與 AI 分數分開）</summary>'+chart+'</details>'+data.map(d=>`<details class="diagnosis-entry"><summary>${new Date(d.created_at).toLocaleString("zh-TW")} · AI 診斷</summary><div class="ai-diagnosis-output">${escapeHtml(d.reply)}</div></details>`).join("");
+ el.innerHTML='<div class="ai-score-visualization"></div><details class="diagnosis-entry"><summary>學習歷程教師評量（1–4 級，與 AI 分數分開）</summary>'+chart+'</details>'+data.map(d=>`<details class="diagnosis-entry"><summary>${new Date(d.created_at).toLocaleString("zh-TW")} · AI 診斷</summary><div class="ai-diagnosis-output">${escapeHtml(d.reply)}</div></details>`).join("");
  renderAiScoreCharts(el.querySelector(".ai-score-visualization"),ordered);
 }
 async function runDiagnosis(projectId,mode,button,status,output,historyEl){
@@ -634,7 +634,7 @@ async function runClassResearch(classId,projects){
  const ids=projects.map(p=>p.id);
  let hist;try{hist={data:(await Promise.all(ids.map(id=>researchReadAll("diagnosis_history","id,project_id,created_at,ratings_snapshot",id,"student")))).flat()};}catch(e){output.textContent="資料讀取失敗："+e.message;return;}
  const keys=["conceptual_reasoning","inquiry_design","evidence_analysis","reflection"];
- const labels=["科學概念與推理","探究方法與變因控制","證據分析與解釋","反思與改進"];
+ const labels=["發現問題","規劃與研究","論證與建模","結論與反思"];
  const rows=[];
  for(const p of projects){
   const snapshots=researchSnapshots((hist.data||[]).filter(x=>x.project_id===p.id));
@@ -720,7 +720,7 @@ async function exportClassResearch(classId,className,projects){
   const {data:members,error}=await db.rpc("class_research_students",{p_class:classId});if(error)throw new Error(error.message);
   if(!members?.length)throw new Error("無班級存取權限或班級沒有學生");
   const map=new Map(members.map(m=>[m.student_id,m]));
-  const header=["班級ID","班級","學生UUID","學生姓名或暱稱","Email","專題ID","專題名稱","資料類型","紀錄ID","時間","階段","角色或狀態","內容","概念推理","探究設計","證據分析","反思","輸入Token","輸出Token","新版階段","對話圖片路徑","AI發現問題","AI研究與規劃","AI論證與建模","AI結論反思","AI評分規準版本"];
+  const header=["班級ID","班級","學生UUID","學生姓名或暱稱","Email","專題ID","專題名稱","資料類型","紀錄ID","時間","階段","角色或狀態","內容","教師發現問題","教師規劃與研究","教師論證與建模","教師結論與反思","輸入Token","輸出Token","新版階段","對話圖片路徑","AI發現問題","AI規劃與研究","AI論證與建模","AI結論與反思","AI評分規準版本"];
   const rows=[header];
   for(const m of members)rows.push([classId,className,m.student_id,m.display_name,m.email,"","","student"]);
   for(const p of projects){const m=map.get(p.user_id);if(!m)continue;
@@ -752,7 +752,7 @@ $("upload-images").onclick=async()=>{if(!currentProject||currentStage!=="data")r
 // AI formative scores are independent of published teacher ratings.
 const AI_SCORE_VERSION="inquiry-stage-v1";
 const AI_SCORE_KEYS=["discovery","planning","argumentation","reflection"];
-const AI_SCORE_LABELS=["發現問題","研究與規劃","論證與建模","結論反思"];
+const AI_SCORE_LABELS=["發現問題","規劃與研究","論證與建模","結論與反思"];
 const validAiScore=v=>typeof v==="number"&&Number.isInteger(v)&&v>=0&&v<=100?v:null;
 function aiScoreValues(d){return AI_SCORE_KEYS.map(k=>validAiScore(d?.ai_scores?.[k]));}
 function aiScoreMean(v){return v.every(n=>n!==null)?v.reduce((a,b)=>a+b,0)/4:null;}
@@ -767,7 +767,7 @@ function renderAiScoreCharts(el,ordered){
  const poly=v=>v.map((n,i)=>xy(i,n).join(',')).join(' ');
  const draw=(v,color,dash)=> (v.every(n=>n!==null)?`<polygon points="${poly(v)}" fill="${color}" fill-opacity=".12" stroke="${color}" stroke-width="2.5" ${dash?'stroke-dasharray="5 4"':''}/>`:'')+v.map((n,i)=>n===null?'':`<circle cx="${xy(i,n)[0]}" cy="${xy(i,n)[1]}" r="4" fill="${color}"/>`).join('');
  function update(){const a=aiScoreValues(records[Number(base.value)]),b=aiScoreValues(records[Number(compare.value)]),same=base.value===compare.value;
- const radar=`<svg viewBox="0 0 360 310" role="img" aria-label="四階段 AI 診斷雷達圖">${[20,40,60,80,100].map(n=>`<polygon points="${poly([n,n,n,n])}" fill="none" stroke="#cbd5e1"/><text x="185" y="${150-n-3}" font-size="9" fill="#64748b">${n}</text>`).join('')}<path d="M180 50V250 M80 150H280" stroke="#cbd5e1"/>${same?'':draw(a,'#64748b',true)}${draw(b,'#087e83',false)}<g fill="currentColor" font-size="12" text-anchor="middle"><text x="180" y="22">發現問題</text><text x="320" y="140">研究與</text><text x="320" y="156">規劃</text><text x="180" y="282">論證與建模</text><text x="40" y="146">結論反思</text></g></svg>`;
+ const radar=`<svg viewBox="0 0 360 310" role="img" aria-label="四階段 AI 診斷雷達圖">${[20,40,60,80,100].map(n=>`<polygon points="${poly([n,n,n,n])}" fill="none" stroke="#cbd5e1"/><text x="185" y="${150-n-3}" font-size="9" fill="#64748b">${n}</text>`).join('')}<path d="M180 50V250 M80 150H280" stroke="#cbd5e1"/>${same?'':draw(a,'#64748b',true)}${draw(b,'#087e83',false)}<g fill="currentColor" font-size="12" text-anchor="middle"><text x="180" y="22">發現問題</text><text x="320" y="140">規劃與</text><text x="320" y="156">研究</text><text x="180" y="282">論證與建模</text><text x="40" y="140">結論與</text><text x="40" y="156">反思</text></g></svg>`;
  el.querySelector('[data-score-comparison]').innerHTML=`<div class="ai-score-radar">${radar}</div><div class="growth-legend"><span style="color:#64748b">● 基準（虛線）</span><span style="color:#087e83">● 比較（實線）</span></div><div class="analytics-stats"><div><span>基準平均</span><strong>${fmt(aiScoreMean(a))}</strong></div><div><span>比較平均</span><strong>${fmt(aiScoreMean(b))}</strong></div><div><span>分數變化</span><strong>${same?'—':delta(aiScoreMean(a),aiScoreMean(b))}</strong></div></div><div class="ai-score-table-wrap"><table class="teacher-table"><thead><tr><th>能力面向</th><th>基準</th><th>比較</th><th>變化</th></tr></thead><tbody>${AI_SCORE_LABELS.map((l,i)=>`<tr><td>${l}</td><td>${fmt(a[i])}</td><td>${fmt(b[i])}</td><td>${same?'—':delta(a[i],b[i])}</td></tr>`).join('')}</tbody></table></div><p class="muted tiny">${same?'目前比較同一次診斷，不計算成長。':'不同日期的成果證據可能不同，請搭配文字診斷解讀。'} 缺分時雷達圖只顯示可評分的點。</p><details class="diagnosis-entry"><summary>查看比較診斷的 AI 建議</summary><div class="ai-diagnosis-output">${escapeHtml(records[Number(compare.value)].reply)}</div></details>`;
  }
  base.addEventListener('change',update);compare.addEventListener('change',update);update();

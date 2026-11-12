@@ -47,7 +47,7 @@
           <button id="prompt-refresh-classes" type="button" class="small secondary">重新讀取班級</button>
           <label><input type="checkbox" id="prompt-enabled"> 啟用本班自訂指令</label>
           <label>本班共用引導指令<textarea id="prompt-general" rows="5" maxlength="4000" placeholder="例如：先詢問學生觀察到的現象，再引導其辨識變因。"></textarea></label>
-          <label>探究階段<select id="prompt-stage-select"><option value="topic">發現問題</option><option value="design">研究與規劃</option><option value="data">論證與建模</option><option value="discussion">結論反思</option></select></label>
+          <label>探究階段<select id="prompt-stage-select"><option value="topic">發現問題</option><option value="design">規劃與研究</option><option value="data">論證與建模</option><option value="discussion">結論與反思</option></select></label>
           <label>此階段的補充指令<textarea id="prompt-stage-text" rows="4" maxlength="3000" placeholder="例如：請先要求學生說明自變因與應變因。"></textarea></label>
           <div class="button-row"><button id="prompt-save-btn" type="button">儲存本班 AI 設定</button><button id="prompt-reset-btn" type="button" class="secondary">恢復平台預設（停用自訂）</button></div>
           <p id="prompt-status" class="status"></p>
@@ -103,9 +103,9 @@
             <div id="inquiry-workspace-view">
             <div class="stage-strip" id="stage-strip">
               <button data-stage="topic" class="stage active">1 發現問題</button>
-<button data-stage="design" class="stage">2 研究與規劃</button>
+<button data-stage="design" class="stage">2 規劃與研究</button>
 <button data-stage="data" class="stage">3 論證與建模</button>
-<button data-stage="discussion" class="stage">4 結論反思</button>
+<button data-stage="discussion" class="stage">4 結論與反思</button>
             </div>
             <section class="progress-panel">
               <div class="progress-top"><strong>探究歷程進度</strong><span id="progress-label">0 / 4 階段完成</span></div>
@@ -117,10 +117,6 @@
                 <div id="discovery-fields" class="hidden"><label>研究問題<textarea id="question-work" rows="4"></textarea></label><label>科學假設<textarea id="hypothesis-work" rows="4"></textarea></label></div><section id="image-panel" class="hidden"><h3>研究圖片與圖表</h3><input id="research-image" type="file" accept="image/jpeg,image/png,image/webp" multiple><button id="upload-images" type="button">上傳圖片</button><p id="image-status" class="status"></p><div id="student-images" class="research-images"></div></section><div class="work-actions"><span id="save-status" class="muted tiny">尚未載入成果</span><div><button id="mark-stage-btn" class="secondary" type="button">標記為已完成</button><button id="save-stage-btn" type="button">儲存成果</button></div></div>
               </div>
             </section>
-            <section class="progress-panel feedback-student" aria-label="教師回饋">
-              <div class="progress-top"><strong>教師回饋與探究能力評量</strong><span id="feedback-student-status" class="muted tiny"></span></div>
-              <div id="student-feedback-list" class="feedback-list"><p class="muted">尚未載入教師回饋</p></div>
-            </section>
             <div class="coach-card">
               <div class="coach-heading"><div class="coach-avatar">AI</div><div><strong>探究教練</strong><div class="muted tiny" id="stage-caption">主題發想與可行性</div></div><span class="online-dot">● 線上</span></div>
               <div class="chat-history-tools"><span class="muted tiny">同一專題的完整對話歷程</span><button type="button" id="chat-export-btn" class="small secondary">匯出對話 CSV</button></div><div id="chat-log" class="chat-log"></div><div class="chat-sharing"><p class="muted tiny">班級教師可查看本專題 AI 對話，供教學及經核准的研究使用。</p></div>
@@ -129,6 +125,10 @@
                 <div class="composer-bottom"><span class="muted tiny">提示：請描述你的推理過程，教練會先提問再給建議。</span><button id="send-btn" type="submit">送出 ↗</button></div>
               </form>
             </div>
+            <section class="progress-panel feedback-student" aria-label="教師回饋">
+              <div class="progress-top"><strong>教師回饋與探究能力評量</strong><span id="feedback-student-status" class="muted tiny"></span></div>
+              <div id="student-feedback-list" class="feedback-list"><p class="muted">尚未載入教師回饋</p></div>
+            </section>
             </div>
             <div id="diagnosis-center-view" class="hidden">
               <div class="diagnosis-center-heading"><div><h2>學習診斷中心</h2><p class="muted">目前專題的探究能力、AI 學習診斷與歷次診斷紀錄</p></div><button id="diagnosis-back-btn" type="button" class="secondary">← 返回科學探究</button></div>
