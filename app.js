@@ -22,6 +22,10 @@ const stageNames = {
 
 const imageBucket="inquiry-research-images";
 let imageLoadVersion=0;
+const selectedImages=new Set();
+function updateImageSelection(){ $("vision-count").textContent=`已選擇 ${selectedImages.size}/3 張圖片`; }
+function clearImageSelection(){selectedImages.clear();updateImageSelection();document.querySelectorAll(".vision-select").forEach(x=>x.checked=false);}
+function messageText(m){return m.content+(m.image_paths?.length?"\n［研究圖片］\n"+m.image_paths.join("\n"):"");}
 const fourGroups={topic:["topic","question","hypothesis"],design:["design"],data:["data"],discussion:["discussion"]};
 const groupKeys=k=>fourGroups[k]||[k];
 const groupStage=k=>["question","hypothesis"].includes(k)?"topic":k;
@@ -110,6 +114,7 @@ function setStage(stage){
   clearTimeout(autosaveTimer);
   stageDirty=false;
   currentStage=stage;
+  clearImageSelection();$("vision-selection").classList.toggle("hidden",stage!=="data");
   document.querySelectorAll(".stage").forEach(b=>b.classList.toggle("active",b.dataset.stage===stage));
   $("stage-caption").textContent="專題連續對話｜目前引導："+stageNames[stage][0];
   $("message-input").placeholder=stageNames[stage][1]+" 也可以告訴我你目前的想法…";
@@ -171,7 +176,7 @@ function renderChatHistory(){
   const data=chatHistory;
   $("chat-log").innerHTML="";
   if(!data.length)addBubble("ai","你好！我是你的 AI 科學探究教練。先告訴我：你最近觀察到什麼有趣的現象，或最想解開哪個科學問題？");
-  data.forEach(m=>addBubble(m.role==="assistant"?"ai":"user",m.content,m.stage));
+  data.forEach(m=>addBubble(m.role==="assistant"?"ai":"user",messageText(m),m.stage));
 }
 function addBubble(role,text,stage){
   const el=document.createElement("div");el.className="bubble "+role;
@@ -202,16 +207,18 @@ async function sendMessage(e){
   e.preventDefault();if(!currentProject||aiRequestInProgress)return;
   const content=$("message-input").value.trim();if(!content)return;
   const projectId=currentProject.id, stage=currentStage;
+  const image_paths=stage==="data"?[...selectedImages]:[];
   aiRequestInProgress=true;
   $("message-input").value="";
-  addBubble("user",content,stage);
+  addBubble("user",messageText({content,image_paths}),stage);
   $("send-btn").disabled=true;$("send-btn").textContent="AI 回覆中…";
   showAiWaiting();
   try{
-    const save=await db.from("messages").insert({project_id:projectId,user_id:currentUser.id,role:"user",content,stage});
+    const save=await db.from("messages").insert({project_id:projectId,user_id:currentUser.id,role:"user",content,stage,image_paths}).select("id").single();
     if(save.error)throw new Error("訊息儲存失敗："+save.error.message);
-    const {data,error}=await db.functions.invoke("coach",{body:{project_id:projectId,stage}});
-    if(error)throw new Error("目前無法連接 AI 教練："+error.message);
+    const {data,error}=await db.functions.invoke("coach",{body:{project_id:projectId,stage,message_id:save.data.id}});
+    if(error){let detail=error.message;try{detail=(await error.context.json()).error||detail;}catch{}throw new Error("目前無法連接 AI 教練："+detail);}
+    clearImageSelection();
     await loadMessages();
     if(!data?.reply)addBubble("ai","我暫時沒有產生回覆，請再試一次。");
   }catch(err){
@@ -240,6 +247,7 @@ $("new-project-btn").addEventListener("click",()=>$("project-dialog").showModal(
 $("empty-new-btn").addEventListener("click",()=>$("project-dialog").showModal());
 $("create-project-btn").addEventListener("click",e=>{e.preventDefault();createProject();});
 $("chat-form").addEventListener("submit",sendMessage);
+$("vision-clear").addEventListener("click",clearImageSelection);
 $("delete-project-btn").addEventListener("click",deleteProject);
 $("save-stage-btn").addEventListener("click",()=>saveStage());
 $("mark-stage-btn").addEventListener("click",()=>{saveStage(groupDone(stageRecords,currentStage)?"in_progress":"completed");});
@@ -441,12 +449,12 @@ async function showTeacherClass(classId){
   $("teacher-project-output").appendChild(chatBox);
   chatBox.querySelector("button").addEventListener("click",async()=>{
     const status=chatBox.querySelector(".status"),out=chatBox.querySelector(".teacher-chat-results");status.textContent="讀取中…";out.replaceChildren();
-    let data;try{data=await researchReadAll("messages","id,role,content,stage,created_at",p.id);}catch(e){status.textContent="讀取失敗："+e.message;return;}
+    let data;try{data=await researchReadAll("messages","id,role,content,stage,created_at,image_paths",p.id);}catch(e){status.textContent="讀取失敗："+e.message;return;}
     if(!data?.length){status.textContent="目前沒有對話。";return;}
     status.textContent=`已載入 ${data.length} 則訊息`;
     for(const m of data.sort((a,b)=>new Date(a.created_at)-new Date(b.created_at))){const item=document.createElement("div");item.className="teacher-chat-item";
       const head=document.createElement("strong");head.textContent=(m.role==="assistant"?"AI":"學生")+" · "+(stageNames[m.stage]?.[0]||"未分類")+" · "+new Date(m.created_at).toLocaleString("zh-TW");
-      const body=document.createElement("p");body.textContent=m.content;item.append(head,body);out.append(item);}
+      const body=document.createElement("p");body.textContent=messageText(m);item.append(head,body);out.append(item);}
   });
   const aiBox=document.createElement("section");aiBox.className="analytics-panel ai-diagnosis";
   aiBox.innerHTML='<h3>AI 教師輔助評量</h3><p class="muted tiny">僅供教師參考，不會修改正式評分。</p><button type="button" class="small secondary">產生評量建議</button><p class="status"></p><div class="ai-diagnosis-output"></div>';
@@ -661,10 +669,10 @@ async function runClassResearch(classId,projects){
 // 對話歷程：逐專題分享授權及學生自行匯出
 $("chat-export-btn").addEventListener("click",async()=>{
  if(!currentProject)return;
- const {data,error}=await db.from("messages").select("created_at,stage,role,content").eq("project_id",currentProject.id).order("created_at",{ascending:true}).limit(10000);
+ const {data,error}=await db.from("messages").select("created_at,stage,role,content,image_paths").eq("project_id",currentProject.id).order("created_at",{ascending:true}).limit(10000);
  if(error){alert("匯出失敗："+error.message);return;}
  const quote=x=>'"'+String(x??"").replace(/"/g,'""').replace(/^[=+@-]/,m=>"'"+m)+'"';
- const rows=[["時間","探究階段","角色","內容"],...(data||[]).map(m=>[m.created_at,stageNames[m.stage]?.[0]||"未分類",m.role==="assistant"?"AI":"學生",m.content])];
+ const rows=[["時間","探究階段","角色","內容","研究圖片路徑"],...(data||[]).map(m=>[m.created_at,stageNames[m.stage]?.[0]||"未分類",m.role==="assistant"?"AI":"學生",m.content,(m.image_paths||[]).join(" | ")])];
  const csv='\ufeff'+rows.map(row=>row.map(quote).join(',')).join('\r\n');
  const blob=new Blob([csv],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");
  a.href=url;a.download="探究對話歷程.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
@@ -709,7 +717,7 @@ async function exportClassResearch(classId,className,projects){
   const {data:members,error}=await db.rpc("class_research_students",{p_class:classId});if(error)throw new Error(error.message);
   if(!members?.length)throw new Error("無班級存取權限或班級沒有學生");
   const map=new Map(members.map(m=>[m.student_id,m]));
-  const header=["班級ID","班級","學生UUID","學生姓名或暱稱","Email","專題ID","專題名稱","資料類型","紀錄ID","時間","階段","角色或狀態","內容","概念推理","探究設計","證據分析","反思","輸入Token","輸出Token","新版階段"];
+  const header=["班級ID","班級","學生UUID","學生姓名或暱稱","Email","專題ID","專題名稱","資料類型","紀錄ID","時間","階段","角色或狀態","內容","概念推理","探究設計","證據分析","反思","輸入Token","輸出Token","新版階段","對話圖片路徑"];
   const rows=[header];
   for(const m of members)rows.push([classId,className,m.student_id,m.display_name,m.email,"","","student"]);
   for(const p of projects){const m=map.get(p.user_id);if(!m)continue;
@@ -717,13 +725,13 @@ async function exportClassResearch(classId,className,projects){
    rows.push([...base,"project",p.id,p.created_at,"","",p.description]);
    const [stages,msgs,diagnoses,usage]=await Promise.all([
     researchReadAll("project_stages","id,stage,status,content,updated_at",p.id),
-    researchReadAll("messages","id,stage,role,content,created_at",p.id),
+    researchReadAll("messages","id,stage,role,content,created_at,image_paths",p.id),
     researchReadAll("diagnosis_history","id,created_at,reply,ratings_snapshot",p.id,"student"),
     researchReadAll("ai_usage_events","id,created_at,stage,status,input_tokens,output_tokens",p.id)
    ]);
    for(const x of await listImages(p.id))rows.push([...base,"image",x.id,x.created_at,"data","",p.id+"/"+x.name]);
    for(const x of stages)rows.push([...base,"stage",x.id,x.updated_at,x.stage,x.status,x.content]);
-   for(const x of msgs)rows.push([...base,"message",x.id,x.created_at,x.stage,x.role,x.content]);
+   for(const x of msgs){const row=[...base,"message",x.id,x.created_at,x.stage,x.role,x.content];row[20]=(x.image_paths||[]).join(" | ");rows.push(row);}
    for(const x of diagnoses){const r=x.ratings_snapshot||{};rows.push([...base,"diagnosis",x.id,x.created_at,"","",x.reply,r.conceptual_reasoning,r.inquiry_design,r.evidence_analysis,r.reflection]);}
    for(const x of usage)rows.push([...base,"usage",x.id,x.created_at,x.stage,x.status,"","","","","",x.input_tokens,x.output_tokens]);
   }
@@ -735,5 +743,5 @@ async function exportClassResearch(classId,className,projects){
 
 
 async function listImages(projectId){const {data,error}=await db.storage.from(imageBucket).list(projectId,{limit:100,sortBy:{column:"created_at",order:"asc"}});if(error)throw error;return (data||[]).filter(x=>x.id);}
-async function loadImages(projectId,out,editable){if(!out)return;const version=++imageLoadVersion;out.replaceChildren();try{const files=await listImages(projectId);if(editable&&version!==imageLoadVersion)return;for(const f of files){const path=projectId+"/"+f.name;const {data,error}=await db.storage.from(imageBucket).createSignedUrl(path,300);if(error)throw error;const card=document.createElement("figure"),link=document.createElement("a"),img=document.createElement("img"),cap=document.createElement("figcaption");link.href=data.signedUrl;link.target="_blank";link.rel="noopener noreferrer";img.src=data.signedUrl;img.alt=f.name;link.append(img);cap.textContent=f.name.replace(/^[^_]+_/,"");card.append(link,cap);if(editable){const del=document.createElement("button");del.type="button";del.className="small secondary";del.textContent="刪除圖片";del.onclick=async()=>{if(!confirm("確定刪除圖片？"))return;const {error}=await db.storage.from(imageBucket).remove([path]);if(error)alert(error.message);else if(currentProject?.id===projectId)loadImages(projectId,out,true);};card.append(del);}if(out.isConnected&&(!editable||version===imageLoadVersion&&currentProject?.id===projectId&&currentStage==="data"))out.append(card);}if(!files.length&&(!editable||version===imageLoadVersion))out.textContent="尚未上傳圖片。";}catch(e){if(!editable||version===imageLoadVersion)out.textContent="圖片讀取失敗："+e.message;}}
+async function loadImages(projectId,out,editable){if(!out)return;const version=++imageLoadVersion;out.replaceChildren();try{const files=await listImages(projectId);if(editable&&version!==imageLoadVersion)return;for(const f of files){const path=projectId+"/"+f.name;const {data,error}=await db.storage.from(imageBucket).createSignedUrl(path,300);if(error)throw error;const card=document.createElement("figure"),link=document.createElement("a"),img=document.createElement("img"),cap=document.createElement("figcaption");link.href=data.signedUrl;link.target="_blank";link.rel="noopener noreferrer";img.src=data.signedUrl;img.alt=f.name;link.append(img);cap.textContent=f.name.replace(/^[^_]+_/,"");card.append(link,cap);if(editable){const label=document.createElement("label"),check=document.createElement("input");check.type="checkbox";check.className="vision-select";check.checked=selectedImages.has(path);check.onchange=()=>{if(check.checked&&selectedImages.size>=3){check.checked=false;alert("每次最多選擇3張圖片");return;}if(check.checked)selectedImages.add(path);else selectedImages.delete(path);updateImageSelection();};label.append(check,document.createTextNode(" 加入 AI 分析"));card.append(label);const del=document.createElement("button");del.type="button";del.className="small secondary";del.textContent="刪除圖片";del.onclick=async()=>{if(!confirm("確定刪除圖片？"))return;const {error}=await db.storage.from(imageBucket).remove([path]);if(error)alert(error.message);else if(currentProject?.id===projectId){selectedImages.delete(path);updateImageSelection();loadImages(projectId,out,true);}};card.append(del);}if(out.isConnected&&(!editable||version===imageLoadVersion&&currentProject?.id===projectId&&currentStage==="data"))out.append(card);}if(!files.length&&(!editable||version===imageLoadVersion))out.textContent="尚未上傳圖片。";}catch(e){if(!editable||version===imageLoadVersion)out.textContent="圖片讀取失敗："+e.message;}}
 $("upload-images").onclick=async()=>{if(!currentProject||currentStage!=="data")return;const id=currentProject.id,btn=$("upload-images"),status=$("image-status"),files=[...$("research-image").files];if(!files.length)return;btn.disabled=true;try{const existing=await listImages(id);if(existing.length+files.length>10)throw new Error("每個專題最多10張圖片");for(const f of files){if(!["image/jpeg","image/png","image/webp"].includes(f.type)||f.size>5*1024*1024)throw new Error("僅支援 JPG、PNG、WebP，每張最多5 MB");}for(const f of files){const ext={"image/jpeg":"jpg","image/png":"png","image/webp":"webp"}[f.type];const name=crypto.randomUUID()+"_"+f.name.replace(/[^a-zA-Z0-9._-]/g,"_").slice(0,100)+"."+ext;const {error}=await db.storage.from(imageBucket).upload(id+"/"+name,f,{contentType:f.type,upsert:false});if(error)throw error;}status.textContent="上傳完成";$("research-image").value="";}catch(e){status.textContent="上傳失敗："+e.message;}finally{btn.disabled=false;if(currentProject?.id===id&&currentStage==="data")loadImages(id,$("student-images"),true);}};
