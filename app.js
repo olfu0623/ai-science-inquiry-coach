@@ -460,6 +460,7 @@ async function showTeacherClass(classId){
   aiBox.innerHTML='<h3>AI 教師輔助評量</h3><p class="muted tiny">僅供教師參考，不會修改正式評分。</p><button type="button" class="small secondary">產生評量建議</button><p class="status"></p><div class="ai-diagnosis-output"></div>';
   $("teacher-project-output").prepend(aiBox);
   aiBox.querySelector("button").addEventListener("click",()=>runDiagnosis(p.id,"teacher",aiBox.querySelector("button"),aiBox.querySelector(".status"),aiBox.querySelector(".ai-diagnosis-output"),historyBox.querySelector(".diagnosis-history")));
+  const studentHistory=document.createElement("section");studentHistory.className="analytics-panel";studentHistory.innerHTML='<h3>學生 AI 學習診斷與能力成長</h3><div class="diagnosis-history"></div>';aiBox.after(studentHistory);loadDiagnosisHistory(p.id,"student",studentHistory.querySelector(".diagnosis-history"));
   const historyBox=document.createElement("section");historyBox.className="analytics-panel";historyBox.innerHTML='<h3>教師 AI 診斷歷程</h3><div class="diagnosis-history"></div>';aiBox.after(historyBox);loadDiagnosisHistory(p.id,"teacher",historyBox.querySelector(".diagnosis-history"));
   loadImages(p.id,$("teacher-images"),false);
   loadTeacherFeedback(p.id);
@@ -573,8 +574,9 @@ const growthLabels={conceptual_reasoning:"科學概念與推理",inquiry_design:
 async function loadDiagnosisHistory(projectId,mode,el){
  if(!el)return;
  el.textContent="讀取歷史紀錄中…";
- const {data,error}=await db.from("diagnosis_history").select("id,reply,created_at,ratings_snapshot").eq("project_id",projectId).eq("mode",mode).order("created_at",{ascending:false}).limit(30);
- if(error){el.textContent="無法讀取診斷歷程，請先執行 diagnosis_history_upgrade.sql。";return;}
+ const request=Symbol();el._diagnosisRequest=request;
+ let data;try{data=await researchReadAll("diagnosis_history","id,reply,created_at,ratings_snapshot,ai_scores,score_version",projectId,mode);data.sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))||String(b.id).localeCompare(String(a.id)));}catch(e){if(el._diagnosisRequest===request)el.textContent="無法讀取診斷歷程，請確認已執行 diagnosis_visualization_upgrade.sql："+e.message;return;}
+ if(el._diagnosisRequest!==request)return;
  if(!data?.length){el.textContent="尚無已儲存的診斷紀錄。";return;}
  const ordered=[...data].reverse();
  const xs=ordered.map((_,i)=>38+i*(520/Math.max(ordered.length-1,1)));
@@ -588,7 +590,8 @@ async function loadDiagnosisHistory(projectId,mode,el){
  }).join("");
  const anyRatings=ordered.some(d=>growthKeys.some(k=>d.ratings_snapshot?.[k]!=null));
  const chart=anyRatings?`<div class="growth-chart"><svg viewBox="0 0 600 195" role="img" aria-label="教師已發布評量的歷次快照，縱軸一至四級">${[1,2,3,4].map(v=>`<line x1="32" y1="${150-(v-1)*38}" x2="565" y2="${150-(v-1)*38}" stroke="#cdd7df"/><text x="12" y="${154-(v-1)*38}" font-size="12" fill="currentColor">${v}</text>`).join("")}${lines}<text x="36" y="183" font-size="11" fill="currentColor">${new Date(ordered[0].created_at).toLocaleDateString("zh-TW")}</text><text x="470" y="183" font-size="11" fill="currentColor">${new Date(ordered.at(-1).created_at).toLocaleDateString("zh-TW")}</text></svg><div class="growth-legend">${growthKeys.map((k,i)=>`<span><b style="color:${["#2875ba","#d17a20","#248a69","#9b59b6"][i]}">●</b> ${growthLabels[k]}</span>`).join("")}</div><p class="muted tiny">各點為診斷當時已發布教師評量的平均等級快照；缺少評量時不補零。同一評量未更新時，重複診斷可能呈現相同數值。</p></div>`:'<p class="muted">目前尚無已發布教師評量，無法繪製能力趨勢；仍可查看文字診斷歷程。</p>';
- el.innerHTML=chart+data.map(d=>`<details class="diagnosis-entry"><summary>${new Date(d.created_at).toLocaleString("zh-TW")} · AI 診斷</summary><div class="ai-diagnosis-output">${escapeHtml(d.reply)}</div></details>`).join("");
+ el.innerHTML='<div class="ai-score-visualization"></div><details class="diagnosis-entry"><summary>已發布教師評量快照（1–4 級，與 AI 分數分開）</summary>'+chart+'</details>'+data.map(d=>`<details class="diagnosis-entry"><summary>${new Date(d.created_at).toLocaleString("zh-TW")} · AI 診斷</summary><div class="ai-diagnosis-output">${escapeHtml(d.reply)}</div></details>`).join("");
+ renderAiScoreCharts(el.querySelector(".ai-score-visualization"),ordered);
 }
 async function runDiagnosis(projectId,mode,button,status,output,historyEl){
  button.disabled=true;status.textContent="AI 正在分析研究證據…";output.textContent="";
@@ -604,7 +607,7 @@ async function runDiagnosis(projectId,mode,button,status,output,historyEl){
   const reply=data?.reply;
   if(!reply)throw new Error("AI 沒有產生診斷結果");
   output.textContent=reply;
-  const saved=await db.from("diagnosis_history").insert({project_id:projectId,requester_id:currentUser.id,mode,reply});
+  const saved=await db.from("diagnosis_history").insert({project_id:projectId,requester_id:currentUser.id,mode,reply,ai_scores:data.scores??null,score_version:data.score_version??null});
   if(saved.error){status.textContent="診斷完成，但歷史紀錄儲存失敗："+saved.error.message;return;}
   status.textContent="診斷完成，已儲存歷史紀錄。AI 建議僅供參考。";
   if(historyEl)await loadDiagnosisHistory(projectId,mode,historyEl);
@@ -717,7 +720,7 @@ async function exportClassResearch(classId,className,projects){
   const {data:members,error}=await db.rpc("class_research_students",{p_class:classId});if(error)throw new Error(error.message);
   if(!members?.length)throw new Error("無班級存取權限或班級沒有學生");
   const map=new Map(members.map(m=>[m.student_id,m]));
-  const header=["班級ID","班級","學生UUID","學生姓名或暱稱","Email","專題ID","專題名稱","資料類型","紀錄ID","時間","階段","角色或狀態","內容","概念推理","探究設計","證據分析","反思","輸入Token","輸出Token","新版階段","對話圖片路徑"];
+  const header=["班級ID","班級","學生UUID","學生姓名或暱稱","Email","專題ID","專題名稱","資料類型","紀錄ID","時間","階段","角色或狀態","內容","概念推理","探究設計","證據分析","反思","輸入Token","輸出Token","新版階段","對話圖片路徑","AI發現問題","AI研究與規劃","AI論證與建模","AI結論反思","AI評分規準版本"];
   const rows=[header];
   for(const m of members)rows.push([classId,className,m.student_id,m.display_name,m.email,"","","student"]);
   for(const p of projects){const m=map.get(p.user_id);if(!m)continue;
@@ -726,13 +729,13 @@ async function exportClassResearch(classId,className,projects){
    const [stages,msgs,diagnoses,usage]=await Promise.all([
     researchReadAll("project_stages","id,stage,status,content,updated_at",p.id),
     researchReadAll("messages","id,stage,role,content,created_at,image_paths",p.id),
-    researchReadAll("diagnosis_history","id,created_at,reply,ratings_snapshot",p.id,"student"),
+    researchReadAll("diagnosis_history","id,created_at,reply,ratings_snapshot,ai_scores,score_version",p.id,"student"),
     researchReadAll("ai_usage_events","id,created_at,stage,status,input_tokens,output_tokens",p.id)
    ]);
    for(const x of await listImages(p.id))rows.push([...base,"image",x.id,x.created_at,"data","",p.id+"/"+x.name]);
    for(const x of stages)rows.push([...base,"stage",x.id,x.updated_at,x.stage,x.status,x.content]);
    for(const x of msgs){const row=[...base,"message",x.id,x.created_at,x.stage,x.role,x.content];row[20]=(x.image_paths||[]).join(" | ");rows.push(row);}
-   for(const x of diagnoses){const r=x.ratings_snapshot||{};rows.push([...base,"diagnosis",x.id,x.created_at,"","",x.reply,r.conceptual_reasoning,r.inquiry_design,r.evidence_analysis,r.reflection]);}
+   for(const x of diagnoses){const r=x.ratings_snapshot||{};const row=[...base,"diagnosis",x.id,x.created_at,"","",x.reply,r.conceptual_reasoning,r.inquiry_design,r.evidence_analysis,r.reflection];if(x.score_version===AI_SCORE_VERSION){AI_SCORE_KEYS.forEach((k,i)=>row[21+i]=validAiScore(x.ai_scores?.[k]));row[25]=x.score_version;}rows.push(row);}
    for(const x of usage)rows.push([...base,"usage",x.id,x.created_at,x.stage,x.status,"","","","","",x.input_tokens,x.output_tokens]);
   }
   const quote=v=>'"'+String(v??"").replace(/^[\s]*[=+@-]/,m=>"'"+m).replace(/"/g,'""')+'"';
@@ -745,3 +748,31 @@ async function exportClassResearch(classId,className,projects){
 async function listImages(projectId){const {data,error}=await db.storage.from(imageBucket).list(projectId,{limit:100,sortBy:{column:"created_at",order:"asc"}});if(error)throw error;return (data||[]).filter(x=>x.id);}
 async function loadImages(projectId,out,editable){if(!out)return;const version=++imageLoadVersion;out.replaceChildren();try{const files=await listImages(projectId);if(editable&&version!==imageLoadVersion)return;for(const f of files){const path=projectId+"/"+f.name;const {data,error}=await db.storage.from(imageBucket).createSignedUrl(path,300);if(error)throw error;const card=document.createElement("figure"),link=document.createElement("a"),img=document.createElement("img"),cap=document.createElement("figcaption");link.href=data.signedUrl;link.target="_blank";link.rel="noopener noreferrer";img.src=data.signedUrl;img.alt=f.name;link.append(img);cap.textContent=f.name.replace(/^[^_]+_/,"");card.append(link,cap);if(editable){const label=document.createElement("label"),check=document.createElement("input");check.type="checkbox";check.className="vision-select";check.checked=selectedImages.has(path);check.onchange=()=>{if(check.checked&&selectedImages.size>=3){check.checked=false;alert("每次最多選擇3張圖片");return;}if(check.checked)selectedImages.add(path);else selectedImages.delete(path);updateImageSelection();};label.append(check,document.createTextNode(" 加入 AI 分析"));card.append(label);const del=document.createElement("button");del.type="button";del.className="small secondary";del.textContent="刪除圖片";del.onclick=async()=>{if(!confirm("確定刪除圖片？"))return;const {error}=await db.storage.from(imageBucket).remove([path]);if(error)alert(error.message);else if(currentProject?.id===projectId){selectedImages.delete(path);updateImageSelection();loadImages(projectId,out,true);}};card.append(del);}if(out.isConnected&&(!editable||version===imageLoadVersion&&currentProject?.id===projectId&&currentStage==="data"))out.append(card);}if(!files.length&&(!editable||version===imageLoadVersion))out.textContent="尚未上傳圖片。";}catch(e){if(!editable||version===imageLoadVersion)out.textContent="圖片讀取失敗："+e.message;}}
 $("upload-images").onclick=async()=>{if(!currentProject||currentStage!=="data")return;const id=currentProject.id,btn=$("upload-images"),status=$("image-status"),files=[...$("research-image").files];if(!files.length)return;btn.disabled=true;try{const existing=await listImages(id);if(existing.length+files.length>10)throw new Error("每個專題最多10張圖片");for(const f of files){if(!["image/jpeg","image/png","image/webp"].includes(f.type)||f.size>5*1024*1024)throw new Error("僅支援 JPG、PNG、WebP，每張最多5 MB");}for(const f of files){const ext={"image/jpeg":"jpg","image/png":"png","image/webp":"webp"}[f.type];const name=crypto.randomUUID()+"_"+f.name.replace(/[^a-zA-Z0-9._-]/g,"_").slice(0,100)+"."+ext;const {error}=await db.storage.from(imageBucket).upload(id+"/"+name,f,{contentType:f.type,upsert:false});if(error)throw error;}status.textContent="上傳完成";$("research-image").value="";}catch(e){status.textContent="上傳失敗："+e.message;}finally{btn.disabled=false;if(currentProject?.id===id&&currentStage==="data")loadImages(id,$("student-images"),true);}};
+
+// AI formative scores are independent of published teacher ratings.
+const AI_SCORE_VERSION="inquiry-stage-v1";
+const AI_SCORE_KEYS=["discovery","planning","argumentation","reflection"];
+const AI_SCORE_LABELS=["發現問題","研究與規劃","論證與建模","結論反思"];
+const validAiScore=v=>typeof v==="number"&&Number.isInteger(v)&&v>=0&&v<=100?v:null;
+function aiScoreValues(d){return AI_SCORE_KEYS.map(k=>validAiScore(d?.ai_scores?.[k]));}
+function aiScoreMean(v){return v.every(n=>n!==null)?v.reduce((a,b)=>a+b,0)/4:null;}
+function renderAiScoreCharts(el,ordered){
+ const records=ordered.filter(d=>d.score_version===AI_SCORE_VERSION&&aiScoreValues(d).some(n=>n!==null));
+ if(!records.length){el.innerHTML='<h3>AI 四階段能力診斷</h3><p class="muted">尚無新版量化診斷。請產生新的 AI 診斷；舊版文字及教師評量仍保留，不補填歷史分數。</p>';return;}
+ const options=records.map((d,i)=>`<option value="${i}">${i+1}. ${escapeHtml(new Date(d.created_at).toLocaleString("zh-TW"))}</option>`).join("");
+ el.innerHTML=`<h3>AI 四階段能力診斷（0–100 分）</h3><p class="muted tiny">AI 形成性評量，非正式教師評分。規準 ${AI_SCORE_VERSION}；證據不足不補零，四面向均有分數才計算平均。分數變化不等同因果學習成效。</p><div class="ai-score-select"><label>基準診斷<select data-base>${options}</select></label><label>比較診斷<select data-compare>${options}</select></label></div><div data-score-comparison></div><h4>歷次診斷趨勢</h4><div data-score-trend></div>`;
+ const base=el.querySelector('[data-base]'),compare=el.querySelector('[data-compare]');compare.value=String(records.length-1);
+ const fmt=n=>n===null?'證據不足':n.toFixed(1);const delta=(a,b)=>a===null||b===null?'—':`${b-a>0?'+':''}${(b-a).toFixed(1)}`;
+ const xy=(i,n)=>[[180,150-n],[180+n,150],[180,150+n],[180-n,150]][i];
+ const poly=v=>v.map((n,i)=>xy(i,n).join(',')).join(' ');
+ const draw=(v,color,dash)=> (v.every(n=>n!==null)?`<polygon points="${poly(v)}" fill="${color}" fill-opacity=".12" stroke="${color}" stroke-width="2.5" ${dash?'stroke-dasharray="5 4"':''}/>`:'')+v.map((n,i)=>n===null?'':`<circle cx="${xy(i,n)[0]}" cy="${xy(i,n)[1]}" r="4" fill="${color}"/>`).join('');
+ function update(){const a=aiScoreValues(records[Number(base.value)]),b=aiScoreValues(records[Number(compare.value)]),same=base.value===compare.value;
+ const radar=`<svg viewBox="0 0 360 310" role="img" aria-label="四階段 AI 診斷雷達圖">${[20,40,60,80,100].map(n=>`<polygon points="${poly([n,n,n,n])}" fill="none" stroke="#cbd5e1"/><text x="185" y="${150-n-3}" font-size="9" fill="#64748b">${n}</text>`).join('')}<path d="M180 50V250 M80 150H280" stroke="#cbd5e1"/>${same?'':draw(a,'#64748b',true)}${draw(b,'#087e83',false)}<g fill="currentColor" font-size="12" text-anchor="middle"><text x="180" y="22">發現問題</text><text x="320" y="140">研究與</text><text x="320" y="156">規劃</text><text x="180" y="282">論證與建模</text><text x="40" y="146">結論反思</text></g></svg>`;
+ el.querySelector('[data-score-comparison]').innerHTML=`<div class="ai-score-radar">${radar}</div><div class="growth-legend"><span style="color:#64748b">● 基準（虛線）</span><span style="color:#087e83">● 比較（實線）</span></div><div class="analytics-stats"><div><span>基準平均</span><strong>${fmt(aiScoreMean(a))}</strong></div><div><span>比較平均</span><strong>${fmt(aiScoreMean(b))}</strong></div><div><span>分數變化</span><strong>${same?'—':delta(aiScoreMean(a),aiScoreMean(b))}</strong></div></div><div class="ai-score-table-wrap"><table class="teacher-table"><thead><tr><th>能力面向</th><th>基準</th><th>比較</th><th>變化</th></tr></thead><tbody>${AI_SCORE_LABELS.map((l,i)=>`<tr><td>${l}</td><td>${fmt(a[i])}</td><td>${fmt(b[i])}</td><td>${same?'—':delta(a[i],b[i])}</td></tr>`).join('')}</tbody></table></div><p class="muted tiny">${same?'目前比較同一次診斷，不計算成長。':'不同日期的成果證據可能不同，請搭配文字診斷解讀。'} 缺分時雷達圖只顯示可評分的點。</p><details class="diagnosis-entry"><summary>查看比較診斷的 AI 建議</summary><div class="ai-diagnosis-output">${escapeHtml(records[Number(compare.value)].reply)}</div></details>`;
+ }
+ base.addEventListener('change',update);compare.addEventListener('change',update);update();
+ const colors=['#2563eb','#b45309','#087e83','#9333ea','#17233b'];const labels=[...AI_SCORE_LABELS,'平均'];
+ const x=i=>45+i*510/Math.max(records.length-1,1),y=n=>190-n*1.5;
+ const lines=labels.map((label,k)=>{let segment=[],paths=[];const flush=()=>{if(segment.length>1)paths.push(`<polyline points="${segment.join(' ')}" fill="none" stroke="${colors[k]}" stroke-width="${k===4?3:1.8}"/>`);segment=[];};const dots=records.map((d,i)=>{const v=aiScoreValues(d),n=k===4?aiScoreMean(v):v[k];if(n===null){flush();return '';}segment.push(`${x(i)},${y(n)}`);return `<circle cx="${x(i)}" cy="${y(n)}" r="3" fill="${colors[k]}"><title>第 ${i+1} 次 · ${label}：${n.toFixed(1)}</title></circle>`;}).join('');flush();return paths.join('')+dots;}).join('');
+ el.querySelector('[data-score-trend]').innerHTML=`<div class="growth-chart"><svg viewBox="0 0 600 230" role="img" aria-label="歷次 AI 診斷四面向及平均分數趨勢">${[0,25,50,75,100].map(n=>`<line x1="40" x2="560" y1="${y(n)}" y2="${y(n)}" stroke="#d6e1e8"/><text x="8" y="${y(n)+4}" font-size="11" fill="currentColor">${n}</text>`).join('')}${lines}${records.map((d,i)=>i===0||i===records.length-1||records.length<=8?`<text x="${x(i)}" y="210" font-size="10" text-anchor="middle" fill="currentColor">${i+1}</text>`:'').join('')}</svg><div class="growth-legend">${labels.map((l,i)=>`<span><b style="color:${colors[i]}">●</b> ${l}</span>`).join('')}</div><p class="muted tiny">橫軸為有至少一項有效分數的新版診斷次序；缺分處斷線。共 ${records.length} 次可視覺化診斷。</p></div>`;
+}
