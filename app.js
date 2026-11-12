@@ -62,8 +62,29 @@ async function selectProject(id){
   clearTimeout(autosaveTimer);
   currentProject=projects.find(p=>p.id===id);if(!currentProject)return;
   $("empty-state").classList.add("hidden");$("project-view").classList.remove("hidden");
+  switchStudentView("inquiry");
   currentStage="topic";await loadStageRecords();setStage("topic");renderProgress();renderProjectHeader();renderProjects();await loadMessages();await loadChatSharing();await loadStudentFeedback();$("student-diagnose-output").textContent="";$("student-diagnose-status").textContent="";await loadDiagnosisHistory(currentProject.id,"student",$("student-diagnosis-history"));await loadResearchConsent(currentProject.id);
 }
+// 學生工作區與學習診斷中心為同頁獨立視圖；不更動 Supabase 資料與診斷邏輯。
+function switchStudentView(view){
+ const diagnosis=view==="diagnosis";
+ $("inquiry-workspace-view").classList.toggle("hidden",diagnosis);
+ $("diagnosis-center-view").classList.toggle("hidden",!diagnosis);
+ $("inquiry-view-btn").classList.toggle("active",!diagnosis);
+ $("diagnosis-view-btn").classList.toggle("active",diagnosis);
+ for(const [id,selected] of [["inquiry-view-btn",!diagnosis],["diagnosis-view-btn",diagnosis]]){
+  if(selected)$(id).setAttribute("aria-current","page");else $(id).removeAttribute("aria-current");
+ }
+ if(diagnosis&&currentProject){renderStudentAnalytics();loadDiagnosisHistory(currentProject.id,"student",$("student-diagnosis-history"));}
+}
+$("inquiry-view-btn").addEventListener("click",()=>switchStudentView("inquiry"));
+$("diagnosis-view-btn").addEventListener("click",async()=>{
+ if(!currentProject)return;
+ if(stageDirty){const ok=await saveStage();if(!ok)return;}
+ switchStudentView("diagnosis");
+});
+$("diagnosis-back-btn").addEventListener("click",()=>switchStudentView("inquiry"));
+
 function renderProjectHeader(){$("project-title").textContent=currentProject.title;$("project-description").textContent=currentProject.description||"尚未填寫研究簡介";}
 function setStage(stage){
   clearTimeout(autosaveTimer);
