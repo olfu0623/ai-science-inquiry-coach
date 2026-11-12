@@ -261,9 +261,23 @@ init();
 // 第三階段：教師班級與學生專題唯讀檢視
 let teacherClasses=[];
 function teacherMessage(message,error=false){setStatus("teacher-status",message,error);}
+function setTeacherView(view){
+  const pages={coach:"teacher-prompt-editor",students:"teacher-students-page",usage:"teacher-usage-page"};
+  if(!Object.hasOwn(pages,view))return;
+  for(const [key,id] of Object.entries(pages))$(id).classList.toggle("hidden",key!==view);
+  document.querySelectorAll("[data-teacher-view]").forEach(btn=>{
+    const active=btn.dataset.teacherView===view;
+    btn.classList.toggle("secondary",!active);
+    btn.setAttribute("aria-pressed",String(active));
+  });
+}
+document.querySelectorAll("[data-teacher-view]").forEach(btn=>btn.addEventListener("click",()=>setTeacherView(btn.dataset.teacherView)));
 function teacherMode(){
   if(!currentUser || approvedTeacherId!==currentUser.id)return;
   $("app-panel").classList.add("hidden");$("teacher-panel").classList.remove("hidden");
+  setTeacherView("students");
+  $("teacher-detail").replaceChildren();$("teacher-detail").classList.add("hidden");
+  $("teacher-students-hint").classList.remove("hidden");
   loadTeacherClasses();
 }
 async function studentMode(){
@@ -297,6 +311,7 @@ async function deleteTeacherClass(classId){
  if(error){teacherMessage("刪除失敗："+error.message,true);if(btn)btn.disabled=false;return;}
  if(!data?.length){teacherMessage("未刪除任何班級，請檢查 RLS 權限。",true);if(btn)btn.disabled=false;return;}
  teacherMessage(`已刪除班級「${c.name}」；學生專題和對話仍保留。`);
+ $("teacher-detail").replaceChildren();$("teacher-detail").classList.add("hidden");$("teacher-students-hint").classList.remove("hidden");
  await loadTeacherClasses();
 }
 let promptStageDrafts={};
@@ -397,6 +412,7 @@ async function joinTeacherClass(){
 }
 async function showTeacherClass(classId){
  const c=teacherClasses.find(x=>x.id===classId);if(!c)return;
+ setTeacherView("students");$("teacher-students-hint").classList.add("hidden");
  const detail=$("teacher-detail");detail.classList.remove("hidden");detail.innerHTML="<p>讀取學生資料中…</p>";
  const {data:members,error}=await db.from("inquiry_class_members").select("student_id,display_name,joined_at").eq("class_id",classId).order("joined_at");
  if(error){detail.textContent="讀取學生失敗："+error.message;return;}

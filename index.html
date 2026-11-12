@@ -32,11 +32,16 @@
         <button id="join-class-open-btn" class="ghost">加入班級</button>
       </section>
       <section id="teacher-panel" class="teacher-panel hidden">
-        <div class="teacher-top"><div><div class="eyebrow">TEACHER DASHBOARD</div><h1>班級探究管理</h1><p class="muted">教師可查看已加入班級的學生專題與階段成果，僅能查看學生明確同意分享的 AI 對話。</p></div></div>
+        <div class="teacher-top"><div><div class="eyebrow">TEACHER DASHBOARD</div><h1>教師管理中心</h1><p class="muted">核准教師可查看自己管理班級的學生專題、階段成果及 AI 對話。</p></div></div>
         <div class="teacher-create"><input id="class-name" maxlength="100" placeholder="輸入班級名稱，例如：高二自然探究 A 班"><button id="create-class-btn">建立班級</button></div>
         <p id="teacher-status" class="status"></p>
         <div id="teacher-classes" class="teacher-classes"></div>
-        <section class="teacher-prompt-editor" id="teacher-prompt-editor">
+        <nav class="teacher-view-nav" aria-label="教師管理頁面切換">
+          <button type="button" class="secondary" data-teacher-view="coach" aria-pressed="false" aria-controls="teacher-prompt-editor">AI 教練設定</button>
+          <button type="button" data-teacher-view="students" aria-pressed="true" aria-controls="teacher-students-page">查看學生專題</button>
+          <button type="button" class="secondary" data-teacher-view="usage" aria-pressed="false" aria-controls="teacher-usage-page">AI 使用量</button>
+        </nav>
+        <section class="teacher-prompt-editor hidden" id="teacher-prompt-editor">
           <h2>AI 教練設定（依班級）</h2><p class="muted">平台的安全與科學探究原則固定保留。教師指令僅作補充；學生若加入多個班級，系統會選擇最早加入的班級設定。</p>
           <label>選擇班級<select id="prompt-class-select"><option value="">請先選擇班級</option></select></label>
           <button id="prompt-refresh-classes" type="button" class="small secondary">重新讀取班級</button>
@@ -58,7 +63,7 @@
             </div>
           </section>
         </section>
-        <section class="teacher-usage-panel" aria-label="班級 AI 使用量">
+        <section id="teacher-usage-page" class="teacher-usage-panel hidden" aria-label="班級 AI 使用量">
           <h2>班級 AI 使用量</h2><p class="muted">只顯示彙總統計，不顯示學生對話文字。每日額度：學生 30 次；教師預覽 40 次模型呼叫（約 20 次比較）。日期依 UTC 計算。</p>
           <label>統計班級<select id="usage-class-select"><option value="">請選擇班級</option></select></label>
           <label>統計期間<select id="usage-days"><option value="7">近 7 天</option><option value="30" selected>近 30 天</option><option value="90">近 90 天</option></select></label>
@@ -66,7 +71,11 @@
           <p id="usage-status" class="status"></p><div id="usage-results"></div>
           <p class="muted tiny">Token 來自 OpenAI API 回傳的 usage；未設定模型單價，因此不顯示成本估算。此版本只統計升級後的新請求。</p>
         </section>
-        <div id="teacher-detail" class="teacher-detail hidden"></div>
+        <section id="teacher-students-page" class="teacher-students-page" aria-label="查看學生專題">
+          <h2>查看學生專題</h2>
+          <p id="teacher-students-hint" class="muted">請在上方班級卡片點選「查看學生」，即可查看專題、對話、診斷及研究資料匯出。</p>
+          <div id="teacher-detail" class="teacher-detail hidden"></div>
+        </section>
       </section>
       <section id="app-panel" class="app-grid hidden">
         <aside class="sidebar">

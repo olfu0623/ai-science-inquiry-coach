@@ -52,3 +52,10 @@ button,input,textarea{font:inherit}button{border:0;border-radius:10px;padding:11
 .diagnosis-center-heading p{margin:0;font-size:13px}
 #diagnosis-center-view .progress-panel{margin-top:14px}
 @media(max-width:650px){.diagnosis-center-heading{align-items:flex-start;flex-direction:column}.diagnosis-center-heading button{width:100%}}
+
+/* Teacher management navigation */
+.teacher-view-nav{display:flex;gap:8px;flex-wrap:wrap;margin:24px 0 18px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.teacher-view-nav button{flex:1 1 150px;text-align:center}
+.teacher-view-nav button:focus-visible{outline:3px solid var(--blue);outline-offset:3px}
+.teacher-students-page{min-width:0;margin-top:18px}
+@media(max-width:650px){.teacher-view-nav button{flex:1 1 100%;}}
