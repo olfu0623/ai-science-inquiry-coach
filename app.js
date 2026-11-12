@@ -12,14 +12,23 @@ let approvedTeacherId=null;
 let roleCheckVersion=0;
 
 const stageNames = {
-  topic: ["主題發想與可行性","先從你觀察到的現象或感到好奇的事情開始。"],
+  topic: ["發現問題","先從你觀察到的現象或感到好奇的事情開始。"],
   question: ["形成研究問題","把興趣轉化成清楚、可觀察、可探究的問題。"],
   hypothesis: ["建立科學假設","提出可被證據支持或推翻的預測，並說明理由。"],
-  design: ["實驗設計與變因控制","思考自變因、應變因、控制變因、器材與步驟。"],
-  data: ["數據整理與分析","檢視資料品質、趨勢、圖表與可能的不確定度。"],
-  discussion: ["結果討論與反思","連結證據與主張，討論限制、誤差與後續研究。"]
+  design: ["研究與規劃","思考自變因、應變因、控制變因、器材與步驟。"],
+  data: ["論證與建模","檢視資料品質、趨勢、圖表與可能的不確定度。"],
+  discussion: ["結論反思","連結證據與主張，討論限制、誤差與後續研究。"]
 };
 
+const imageBucket="inquiry-research-images";
+let imageLoadVersion=0;
+const fourGroups={topic:["topic","question","hypothesis"],design:["design"],data:["data"],discussion:["discussion"]};
+const groupKeys=k=>fourGroups[k]||[k];
+const groupStage=k=>["question","hypothesis"].includes(k)?"topic":k;
+const groupDone=(rows,k)=>groupKeys(k).every(key=>rows.some(r=>r.stage===key&&r.status==="completed"));
+const completedCount=rows=>Object.keys(fourGroups).filter(k=>groupDone(rows,k)).length;
+const fieldId=k=>k==="question"?"question-work":k==="hypothesis"?"hypothesis-work":"stage-work";
+const groupRecord=(rows,k)=>({status:groupDone(rows,k)?"completed":rows.some(r=>groupKeys(k).includes(r.stage)&&r.content)?"in_progress":"not_started",content:groupKeys(k).map(key=>{const r=rows.find(x=>x.stage===key);return k==="topic"?({topic:"主題發想",question:"研究問題",hypothesis:"科學假設"}[key]+"：\n"+(r?.content||"尚無成果紀錄")):r?.content||"";}).join("\n\n")});
 function setStatus(id, msg, error=false){ const el=$(id); el.textContent=msg; el.classList.toggle("error",error); }
 function showApp(on){ if(!on){approvedTeacherId=null;roleCheckVersion++;} $("teacher-mode-btn").classList.add("hidden"); $("auth-panel").classList.toggle("hidden",on); $("app-panel").classList.toggle("hidden",!on); $("class-toolbar").classList.toggle("hidden",!on); $("teacher-panel").classList.add("hidden"); $("logout-btn").classList.toggle("hidden",!on); }
 function escapeHtml(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
@@ -64,6 +73,7 @@ function renderProjects(){
 }
 function showEmpty(){$("empty-state").classList.remove("hidden");$("project-view").classList.add("hidden");currentProject=null;renderProjects();}
 async function selectProject(id){
+  if(stageSaving){alert("請等待成果儲存完成。");return;}
   if(aiRequestInProgress){alert("請等待 AI 回覆完成後再切換專題。");return;}
   if(currentProject && stageDirty){
     const ok = await saveStage();
@@ -104,11 +114,14 @@ function setStage(stage){
   $("stage-caption").textContent="專題連續對話｜目前引導："+stageNames[stage][0];
   $("message-input").placeholder=stageNames[stage][1]+" 也可以告訴我你目前的想法…";
   const record=stageRecords.find(r=>r.stage===stage);
+  $("discovery-fields").classList.toggle("hidden",stage!=="topic");$("topic-label").classList.toggle("hidden",stage!=="topic");
+  for(const k of ["question","hypothesis"])$(fieldId(k)).value=stageRecords.find(r=>r.stage===k)?.content||"";
+  $("image-panel").classList.toggle("hidden",stage!=="data");if(stage==="data")loadImages(currentProject.id,$("student-images"),true);
   $("work-title").textContent=stageNames[stage][0]+"｜成果紀錄";
   $("work-hint").textContent=stageNames[stage][1]+" 將重要成果整理在此，方便日後接續研究。";
   $("stage-work").value=record?.content||"";
-  const done=record?.status==="completed";
-  $("stage-status").textContent=done?"已完成":(record?.content?"進行中":"尚未開始");
+  const done=groupDone(stageRecords,stage);
+  $("stage-status").textContent=done?"已完成":(groupKeys(stage).some(k=>stageRecords.some(r=>r.stage===k&&r.content))?"進行中":"尚未開始");
   $("stage-status").classList.toggle("done",done);
   $("mark-stage-btn").textContent=done?"取消完成標記":"標記為已完成";
   $("save-status").textContent=record?"已載入上次儲存的成果":"尚無成果紀錄";
@@ -121,48 +134,27 @@ async function loadStageRecords(){
   stageRecords=data||[];
 }
 function renderProgress(){
-  const done=stageRecords.filter(r=>r.status==="completed").length;
-  $("progress-label").textContent=`${done} / 6 階段完成`;
-  $("progress-fill").style.width=`${done/6*100}%`;
-  const labels={topic:"主題發想",question:"研究問題",hypothesis:"科學假設",design:"實驗設計",data:"數據分析",discussion:"討論反思"};
-  document.querySelectorAll(".stage").forEach(b=>{const r=stageRecords.find(x=>x.stage===b.dataset.stage);b.classList.toggle("stage-done",r?.status==="completed");b.title=r?.status==="completed"?labels[b.dataset.stage]+"（已完成）":labels[b.dataset.stage];});
+ const done=completedCount(stageRecords);$("progress-label").textContent=`${done} / 4 階段完成`;$("progress-fill").style.width=`${done/4*100}%`;
+ document.querySelectorAll(".stage").forEach(b=>{const done=groupDone(stageRecords,b.dataset.stage);b.classList.toggle("stage-done",done);b.title=stageNames[b.dataset.stage][0]+(done?"（已完成）":"");});
 }
 async function saveStage(status){
-  if(!currentProject || stageSaving) return false;
-  clearTimeout(autosaveTimer);
-  const projectId=currentProject.id, stage=currentStage;
-  const content=$("stage-work").value.trim();
-  const old=stageRecords.find(r=>r.stage===stage);
-  const nextStatus=status||(old?.status==="completed"?"completed":(content?"in_progress":"not_started"));
-  if(nextStatus==="completed" && !content){
-    $("save-status").textContent="請先填寫本階段成果，再標記完成";
-    return false;
-  }
-  const payload={project_id:projectId,user_id:currentUser.id,stage,content,status:nextStatus,updated_at:new Date().toISOString()};
-  stageSaving=true;
-  $("save-status").textContent="儲存中…";
-  const {data,error}=await db.from("project_stages").upsert(payload,{onConflict:"project_id,stage"}).select().single();
-  stageSaving=false;
-  if(error){$("save-status").textContent="儲存失敗："+error.message;return false;}
-  stageRecords=stageRecords.filter(r=>r.stage!==stage);stageRecords.push(data);
-  if(currentProject?.id===projectId && currentStage===stage){
-    if($("stage-work").value.trim()===content) stageDirty=false;
-    const done=data.status==="completed";
-    $("stage-status").textContent=done?"已完成":(content?"進行中":"尚未開始");
-    $("stage-status").classList.toggle("done",done);
-    $("mark-stage-btn").textContent=done?"取消完成標記":"標記為已完成";
-    $("save-status").textContent="已儲存 · "+new Date().toLocaleTimeString("zh-TW");
-    if(stageDirty) scheduleAutosave();
-  }
-  renderProgress();
-  return true;
+ if(!currentProject||stageSaving)return false;clearTimeout(autosaveTimer);
+ const projectId=currentProject.id,stage=currentStage,keys=groupKeys(stage);
+ const values=keys.map(k=>$(fieldId(k)).value.trim());
+ if(status==="completed"&&values.some(v=>!v)){ $("save-status").textContent="請先填寫本階段所有成果，再標記完成";return false;}
+ const payload=keys.map((k,i)=>({project_id:projectId,user_id:currentUser.id,stage:k,content:values[i],status:values[i]?(status||(stageRecords.find(r=>r.stage===k)?.status==="completed"?"completed":"in_progress")):"not_started",updated_at:new Date().toISOString()}));
+ stageSaving=true;$("save-status").textContent="儲存中…";
+ const {data,error}=await db.from("project_stages").upsert(payload,{onConflict:"project_id,stage"}).select();stageSaving=false;
+ if(error){$("save-status").textContent="儲存失敗："+error.message;return false;}
+ stageRecords=stageRecords.filter(r=>!keys.includes(r.stage)).concat(data||[]);
+ if(currentProject?.id===projectId&&currentStage===stage){stageDirty=keys.some((k,i)=>$(fieldId(k)).value.trim()!==values[i]);const done=groupDone(stageRecords,stage);$("stage-status").textContent=done?"已完成":values.some(Boolean)?"進行中":"尚未開始";$("stage-status").classList.toggle("done",done);$("mark-stage-btn").textContent=done?"取消完成標記":"標記為已完成";$("save-status").textContent="已儲存";if(stageDirty)scheduleAutosave();}renderProgress();return true;
 }
 function scheduleAutosave(){
   clearTimeout(autosaveTimer);
   autosaveTimer=setTimeout(()=>{if(stageDirty && !stageSaving) saveStage();},1200);
 }
 async function switchStage(stage){
-  if(stage===currentStage)return;
+  if(stage===currentStage||stageSaving)return;
   if(stageDirty){const ok=await saveStage();if(!ok)return;}
   setStage(stage);
   renderStudentFeedback();
@@ -232,9 +224,11 @@ async function sendMessage(e){
   }
 }
 async function deleteProject(){
+  if(stageSaving){alert("請等待成果儲存完成。");return;}
   if(aiRequestInProgress){alert("請等待 AI 回覆完成後再刪除專題。");return;}
   clearTimeout(autosaveTimer);
   if(!currentProject||!confirm(`確定刪除「${currentProject.title}」及其對話紀錄？`))return;
+  try{const files=await listImages(currentProject.id);if(files.length){const {error}=await db.storage.from(imageBucket).remove(files.map(f=>currentProject.id+"/"+f.name));if(error)throw error;}}catch(e){alert("圖片清理失敗："+e.message);return;}
   const {error}=await db.from("projects").delete().eq("id",currentProject.id);
   if(error){alert("刪除失敗："+error.message);return;}currentProject=null;await loadProjects();
 }
@@ -248,9 +242,9 @@ $("create-project-btn").addEventListener("click",e=>{e.preventDefault();createPr
 $("chat-form").addEventListener("submit",sendMessage);
 $("delete-project-btn").addEventListener("click",deleteProject);
 $("save-stage-btn").addEventListener("click",()=>saveStage());
-$("mark-stage-btn").addEventListener("click",()=>{const r=stageRecords.find(x=>x.stage===currentStage);saveStage(r?.status==="completed"?"in_progress":"completed");});
+$("mark-stage-btn").addEventListener("click",()=>{saveStage(groupDone(stageRecords,currentStage)?"in_progress":"completed");});
 document.querySelectorAll(".stage").forEach(b=>b.addEventListener("click",()=>switchStage(b.dataset.stage)));
-$("stage-work").addEventListener("input",()=>{
+for(const id of ["stage-work","question-work","hypothesis-work"])$(id).addEventListener("input",()=>{
   stageDirty=true;
   $("save-status").textContent="尚未儲存，將自動儲存…";
   scheduleAutosave();
@@ -341,7 +335,7 @@ async function loadClassPrompt(){
  if(error){setStatus("prompt-status","讀取失敗："+error.message,true);return;}
  if($("prompt-class-select").value!==classId)return;
  $("prompt-enabled").checked=!!data?.enabled;$("prompt-general").value=data?.general_prompt||"";
- promptStageDrafts=data?.stage_prompts||{};$("prompt-stage-text").value=promptStageDrafts.topic||"";
+ promptStageDrafts={...(data?.stage_prompts||{})};$("prompt-stage-text").value=promptStageDrafts.topic||"";
  setStatus("prompt-status",data?"已載入本班設定":"本班尚未設定，使用平台預設指令");
 }
 async function saveClassPrompt(reset=false){
@@ -432,16 +426,16 @@ async function showTeacherClass(classId){
  detail.innerHTML=`<h2>${escapeHtml(c.name)} · 學生專題</h2><p class="muted">${ids.length} 位學生，${projectsForClass.length} 個專題。僅供教師檢視，不可修改學生成果。</p>`+
  `<div class="analytics-panel">${summary}</div><section class="analytics-panel" id="research-dashboard"><h3>研究分析與資料匯出</h3><p class="muted">讀取已發布教師評量的歷次快照，按專題比較最早與最新兩次有評分的紀錄。匯出含學生識別資訊，僅供核准的班級教師及授權研究用途。</p><button type="button" id="research-analyze-btn" class="small secondary">分析班級能力變化</button><div id="research-analysis-output"></div><p><button type="button" id="research-full-export" class="small secondary">匯出完整研究 CSV（含學生資訊）</button></p><p id="research-export-status" class="status"></p></section>`+
  (projectsForClass.length?`<table class="teacher-table"><thead><tr><th>學生</th><th>專題</th><th>完成進度</th><th>最近更新</th><th>操作</th></tr></thead><tbody>`+
- projectsForClass.map(p=>{const n=stages.filter(x=>x.project_id===p.id&&x.status==="completed").length;
- return `<tr><td>${escapeHtml(memberMap.get(p.user_id)||"未命名")}</td><td>${escapeHtml(p.title)}</td><td>${n} / 6</td><td>${new Date(p.updated_at).toLocaleDateString("zh-TW")}</td><td><button class="small secondary" data-inspect="${p.id}">查看成果</button></td></tr>`;}).join("")+`</tbody></table>`:'<p class="muted">目前沒有學生專題。學生加入班級並建立專題後，會顯示在這裡。</p>')+`<div id="teacher-project-output"></div>`;
+ projectsForClass.map(p=>{const n=completedCount(stages.filter(x=>x.project_id===p.id));
+ return `<tr><td>${escapeHtml(memberMap.get(p.user_id)||"未命名")}</td><td>${escapeHtml(p.title)}</td><td>${n} / 4</td><td>${new Date(p.updated_at).toLocaleDateString("zh-TW")}</td><td><button class="small secondary" data-inspect="${p.id}">查看成果</button></td></tr>`;}).join("")+`</tbody></table>`:'<p class="muted">目前沒有學生專題。學生加入班級並建立專題後，會顯示在這裡。</p>')+`<div id="teacher-project-output"></div>`;
  detail.querySelector("#research-full-export")?.addEventListener("click",()=>exportClassResearch(classId,c.name,projectsForClass));
  detail.querySelector("#research-analyze-btn")?.addEventListener("click",()=>runClassResearch(classId,projectsForClass));
  detail.querySelectorAll("[data-inspect]").forEach(b=>b.addEventListener("click",()=>{
   const p=projectsForClass.find(x=>x.id===b.dataset.inspect);if(!p)return;
-  const labels={topic:"主題發想",question:"研究問題",hypothesis:"科學假設",design:"實驗設計",data:"數據分析",discussion:"討論反思"};
+  const labels={topic:"發現問題",design:"研究與規劃",data:"論證與建模",discussion:"結論反思"};
   $("teacher-project-output").innerHTML=`<h3>${escapeHtml(memberMap.get(p.user_id)||"學生")} · ${escapeHtml(p.title)}</h3><p class="muted">${escapeHtml(p.description||"尚未填寫研究簡介")}</p>`+
-  Object.entries(labels).map(([key,label])=>{const r=stages.find(x=>x.project_id===p.id&&x.stage===key);const state=r?.status==="completed"?"已完成":r?.status==="in_progress"?"進行中":"尚未開始";
-  return `<details class="teacher-stage"><summary>${escapeHtml(label)} · ${state}</summary><div class="teacher-work">${escapeHtml(r?.content||"尚無成果紀錄")}</div><div class="teacher-review-slot" data-review-stage="${key}"></div></details>`;}).join("");
+  Object.entries(labels).map(([key,label])=>{const r=groupRecord(stages.filter(x=>x.project_id===p.id),key);const state=r?.status==="completed"?"已完成":r?.status==="in_progress"?"進行中":"尚未開始";
+  return `<details class="teacher-stage"><summary>${escapeHtml(label)} · ${state}</summary><div class="teacher-work">${escapeHtml(r?.content||"尚無成果紀錄")}</div>${groupKeys(key).map(k=>`<div class="teacher-review-slot" data-review-stage="${k}"><\/div>`).join("")}${key==="data"?'<div id="teacher-images" class="research-images"></div>':""}</details>`;}).join("");
   const chatBox=document.createElement("section");chatBox.className="analytics-panel chat-teacher-panel";
   chatBox.innerHTML='<h3>學生與 AI 對話歷程</h3><p class="muted tiny">班級教師可查看學生完整對話，僅供教學及已核准研究用途。</p><button type="button" class="small secondary">讀取對話歷程</button><p class="status"></p><div class="teacher-chat-results"></div>';
   $("teacher-project-output").appendChild(chatBox);
@@ -459,6 +453,7 @@ async function showTeacherClass(classId){
   $("teacher-project-output").prepend(aiBox);
   aiBox.querySelector("button").addEventListener("click",()=>runDiagnosis(p.id,"teacher",aiBox.querySelector("button"),aiBox.querySelector(".status"),aiBox.querySelector(".ai-diagnosis-output"),historyBox.querySelector(".diagnosis-history")));
   const historyBox=document.createElement("section");historyBox.className="analytics-panel";historyBox.innerHTML='<h3>教師 AI 診斷歷程</h3><div class="diagnosis-history"></div>';aiBox.after(historyBox);loadDiagnosisHistory(p.id,"teacher",historyBox.querySelector(".diagnosis-history"));
+  loadImages(p.id,$("teacher-images"),false);
   loadTeacherFeedback(p.id);
   renderTeacherProjectAnalytics(p,stages.filter(x=>x.project_id===p.id),reviews.filter(x=>x.project_id===p.id));
  }));
@@ -485,7 +480,7 @@ async function loadStudentFeedback(){
 }
 function renderStudentFeedback(){
  const el=$("student-feedback-list");if(!el)return;
- const rows=studentFeedback.filter(r=>r.stage===currentStage);
+ const rows=studentFeedback.filter(r=>groupKeys(currentStage).includes(r.stage));
  if(!rows.length){el.innerHTML='<p class="muted">本階段尚無已發布的教師回饋。</p>';return;}
  el.innerHTML=rows.map(r=>`<article class="feedback-entry"><div class="muted tiny">發布回饋 · ${new Date(r.updated_at).toLocaleString("zh-TW")}</div>${renderRubricReadOnly(r)}<div class="feedback-comment">${escapeHtml(r.comment||"教師未填寫文字回饋")}</div></article>`).join("");
 }
@@ -499,7 +494,7 @@ async function loadTeacherFeedback(projectId){
   const stage=slot.dataset.reviewStage;
   const r=(data||[]).find(x=>x.stage===stage)||{};
   const fields=Object.entries(rubricLabels).map(([key,label])=>`<label>${escapeHtml(label)}<select data-rubric="${key}"><option value="">不評分</option>${Object.entries(rubricLevels).map(([n,name])=>`<option value="${n}" ${String(r[key]??"")===n?"selected":""}>${escapeHtml(name)}</option>`).join("")}</select></label>`).join("");
-  slot.innerHTML=`<div class="review-editor"><h4>教師回饋與評量 <span class="muted tiny">${r.published?"已發布":"草稿／尚未發布"}</span></h4><div class="rubric-grid">${fields}</div><label>文字回饋<textarea data-review-comment rows="3" maxlength="5000" placeholder="具體指出學生的優點、證據與下一步建議">${escapeHtml(r.comment||"")}</textarea></label><div class="teacher-actions"><button class="small secondary" type="button" data-review-save="draft">儲存草稿</button><button class="small" type="button" data-review-save="publish">儲存並發布</button></div><p class="status" data-review-status></p></div>`;
+  slot.innerHTML=`<div class="review-editor"><h4>${escapeHtml(stageNames[stage]?.[0]||stage)}｜教師回饋與評量 <span class="muted tiny">${r.published?"已發布":"草稿／尚未發布"}</span></h4><div class="rubric-grid">${fields}</div><label>文字回饋<textarea data-review-comment rows="3" maxlength="5000" placeholder="具體指出學生的優點、證據與下一步建議">${escapeHtml(r.comment||"")}</textarea></label><div class="teacher-actions"><button class="small secondary" type="button" data-review-save="draft">儲存草稿</button><button class="small" type="button" data-review-save="publish">儲存並發布</button></div><p class="status" data-review-status></p></div>`;
   slot.querySelectorAll("[data-review-save]").forEach(btn=>btn.addEventListener("click",()=>saveTeacherFeedback(projectId,stage,slot,btn.dataset.reviewSave==="publish")));
  }
 }
@@ -538,11 +533,11 @@ function radarSVG(means){
 function analyticsMarkup(rows){const means=rubricMeans(rows);return `<div class="radar-figure">${radarSVG(means)}</div><div class="radar-values">${analyticsKeys.map(k=>`<div><strong>${escapeHtml(rubricLabels[k])}</strong><span>${means[k]===null?'尚未評量':means[k].toFixed(2)+' / 4'}</span></div>`).join('')}<p class="muted tiny">共 ${rows.length} 筆已發布評量；同一教師對不同階段的評分各算一筆。</p></div>`;}
 function renderStudentAnalytics(){const el=$("student-radar");if(!el)return;el.innerHTML=analyticsMarkup(studentFeedback||[]);}
 function buildClassSummary(members,ps,stages,reviews){
- const completed=ps.map(p=>stages.filter(s=>s.project_id===p.id&&s.status==='completed').length);
- const done=completed.reduce((a,b)=>a+b,0),denom=ps.length*6;
+ const completed=ps.map(p=>completedCount(stages.filter(s=>s.project_id===p.id)));
+ const done=completed.reduce((a,b)=>a+b,0),denom=ps.length*4;
  const means=rubricMeans(reviews);
- const count=ps.filter(p=>stages.filter(s=>s.project_id===p.id&&s.status==='completed').length<3).length;
- return `<h3>班級學習分析</h3><div class="analytics-stats"><div><strong>${members.length}</strong><span>班級成員</span></div><div><strong>${ps.length}</strong><span>研究專題</span></div><div><strong>${denom?Math.round(done/denom*100):0}%</strong><span>階段完成率</span></div><div><strong>${count}</strong><span>未達 3 階段的專題</span></div></div><p class="muted tiny">完成率＝已完成階段數／（專題數 × 6）；「未達 3 階段」僅供教師追蹤，不代表能力不足。</p><div class="radar-layout">${analyticsMarkup(reviews)}</div>`;
+ const count=ps.filter(p=>completedCount(stages.filter(s=>s.project_id===p.id))<3).length;
+ return `<h3>班級學習分析</h3><div class="analytics-stats"><div><strong>${members.length}</strong><span>班級成員</span></div><div><strong>${ps.length}</strong><span>研究專題</span></div><div><strong>${denom?Math.round(done/denom*100):0}%</strong><span>階段完成率</span></div><div><strong>${count}</strong><span>未達 3 階段的專題</span></div></div><p class="muted tiny">完成率＝已完成階段數／（專題數 × 4）；「未達 3 階段」僅供教師追蹤，不代表能力不足。</p><div class="radar-layout">${analyticsMarkup(reviews)}</div>`;
 }
 function renderTeacherProjectAnalytics(p,stageRows,reviews){
  const out=$("teacher-project-output");if(!out)return;
@@ -553,9 +548,9 @@ function renderTeacherProjectAnalytics(p,stageRows,reviews){
 function reportHtml(){
  if(!currentProject)return '';
  const rows=studentFeedback||[];
- const stages=Object.entries(stageNames).map(([key,[title]])=>{const r=stageRecords.find(s=>s.stage===key);const related=rows.filter(x=>x.stage===key);return `<section class="report-stage"><h2>${escapeHtml(title)}｜${r?.status==='completed'?'已完成':r?.status==='in_progress'?'進行中':'尚未開始'}</h2><div class="report-work">${escapeHtml(r?.content||'尚無成果紀錄')}</div>${related.map(f=>`<div class="report-feedback"><strong>教師回饋</strong><p>${escapeHtml(f.comment||'未填寫文字回饋')}</p><p>${analyticsKeys.filter(k=>f[k]!=null).map(k=>escapeHtml(rubricLabels[k])+': '+Number(f[k])+' 級').join('；')}</p></div>`).join('')}</section>`;}).join('');
- const done=stageRecords.filter(s=>s.status==='completed').length;
- return `<h1>科學探究個人學習歷程報告</h1><p>專題：${escapeHtml(currentProject.title)}</p><p>簡介：${escapeHtml(currentProject.description||'')}</p><p>完成進度：${done} / 6 階段</p><h2>探究能力分析</h2><div class="radar-layout">${analyticsMarkup(rows)}</div>${stages}<p class="muted">本報告僅包含已發布的教師回饋；評量為形成性學習參考。</p>`;
+ const stages=Object.keys(fourGroups).map(key=>{const title=stageNames[key][0];const r=groupRecord(stageRecords,key);const related=rows.filter(x=>groupKeys(key).includes(x.stage));return `<section class="report-stage"><h2>${escapeHtml(title)}｜${r?.status==='completed'?'已完成':r?.status==='in_progress'?'進行中':'尚未開始'}</h2><div class="report-work">${escapeHtml(r?.content||'尚無成果紀錄')}</div>${related.map(f=>`<div class="report-feedback"><strong>教師回饋</strong><p>${escapeHtml(f.comment||'未填寫文字回饋')}</p><p>${analyticsKeys.filter(k=>f[k]!=null).map(k=>escapeHtml(rubricLabels[k])+': '+Number(f[k])+' 級').join('；')}</p></div>`).join('')}</section>`;}).join('');
+ const done=completedCount(stageRecords);
+ return `<h1>科學探究個人學習歷程報告</h1><p>專題：${escapeHtml(currentProject.title)}</p><p>簡介：${escapeHtml(currentProject.description||'')}</p><p>完成進度：${done} / 4 階段</p><h2>探究能力分析</h2><div class="radar-layout">${analyticsMarkup(rows)}</div>${stages}<p class="muted">本報告僅包含已發布的教師回饋；評量為形成性學習參考。</p>`;
 }
 $("student-report-btn").addEventListener('click',async()=>{
  if(stageDirty){const ok=await saveStage();if(!ok){alert('請先儲存成果');return;}}
@@ -693,7 +688,7 @@ $("usage-refresh-btn").addEventListener("click",async()=>{
  summary.textContent=`呼叫 ${v.calls||0} 次｜輸入 ${Number(v.input_tokens||0).toLocaleString()} tokens｜輸出 ${Number(v.output_tokens||0).toLocaleString()} tokens｜活躍學生 ${v.active_students||0} 人`;
  $("usage-results").appendChild(summary);
  const ul=document.createElement("ul");
- for(const x of v.by_stage||[]){const li=document.createElement("li");li.textContent=`${stageNames[x.stage]?.[0]||x.stage}：${x.calls} 次`;ul.appendChild(li);}
+ const grouped={};for(const x of v.by_stage||[]){const k=groupStage(x.stage);grouped[k]=(grouped[k]||0)+Number(x.calls||0);}for(const [k,n] of Object.entries(grouped)){const li=document.createElement("li");li.textContent=`${stageNames[k]?.[0]||k}：${n} 次`;ul.appendChild(li);}
  $("usage-results").appendChild(ul);setStatus("usage-status","統計完成（僅含升級後紀錄）");
 });
 
@@ -714,7 +709,7 @@ async function exportClassResearch(classId,className,projects){
   const {data:members,error}=await db.rpc("class_research_students",{p_class:classId});if(error)throw new Error(error.message);
   if(!members?.length)throw new Error("無班級存取權限或班級沒有學生");
   const map=new Map(members.map(m=>[m.student_id,m]));
-  const header=["班級ID","班級","學生UUID","學生姓名或暱稱","Email","專題ID","專題名稱","資料類型","紀錄ID","時間","階段","角色或狀態","內容","概念推理","探究設計","證據分析","反思","輸入Token","輸出Token"];
+  const header=["班級ID","班級","學生UUID","學生姓名或暱稱","Email","專題ID","專題名稱","資料類型","紀錄ID","時間","階段","角色或狀態","內容","概念推理","探究設計","證據分析","反思","輸入Token","輸出Token","新版階段"];
   const rows=[header];
   for(const m of members)rows.push([classId,className,m.student_id,m.display_name,m.email,"","","student"]);
   for(const p of projects){const m=map.get(p.user_id);if(!m)continue;
@@ -726,13 +721,19 @@ async function exportClassResearch(classId,className,projects){
     researchReadAll("diagnosis_history","id,created_at,reply,ratings_snapshot",p.id,"student"),
     researchReadAll("ai_usage_events","id,created_at,stage,status,input_tokens,output_tokens",p.id)
    ]);
+   for(const x of await listImages(p.id))rows.push([...base,"image",x.id,x.created_at,"data","",p.id+"/"+x.name]);
    for(const x of stages)rows.push([...base,"stage",x.id,x.updated_at,x.stage,x.status,x.content]);
    for(const x of msgs)rows.push([...base,"message",x.id,x.created_at,x.stage,x.role,x.content]);
    for(const x of diagnoses){const r=x.ratings_snapshot||{};rows.push([...base,"diagnosis",x.id,x.created_at,"","",x.reply,r.conceptual_reasoning,r.inquiry_design,r.evidence_analysis,r.reflection]);}
    for(const x of usage)rows.push([...base,"usage",x.id,x.created_at,x.stage,x.status,"","","","","",x.input_tokens,x.output_tokens]);
   }
   const quote=v=>'"'+String(v??"").replace(/^[\s]*[=+@-]/,m=>"'"+m).replace(/"/g,'""')+'"';
-  const csv="\ufeff"+rows.map(r=>header.map((_,i)=>quote(r[i])).join(",")).join("\r\n");
+  const csv="\ufeff"+rows.map(r=>header.map((_,i)=>quote(i===19?(r[10]?stageNames[groupStage(r[10])]?.[0]||r[10]:""):r[i])).join(",")).join("\r\n");
   const url=URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));const a=document.createElement("a");a.href=url;a.download="class_research_identified.csv";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status.textContent=`匯出完成：${rows.length-1} 筆紀錄。`;
  }catch(e){status.textContent="匯出失敗："+e.message;}finally{button.disabled=false;}
 }
+
+
+async function listImages(projectId){const {data,error}=await db.storage.from(imageBucket).list(projectId,{limit:100,sortBy:{column:"created_at",order:"asc"}});if(error)throw error;return (data||[]).filter(x=>x.id);}
+async function loadImages(projectId,out,editable){if(!out)return;const version=++imageLoadVersion;out.replaceChildren();try{const files=await listImages(projectId);if(editable&&version!==imageLoadVersion)return;for(const f of files){const path=projectId+"/"+f.name;const {data,error}=await db.storage.from(imageBucket).createSignedUrl(path,300);if(error)throw error;const card=document.createElement("figure"),link=document.createElement("a"),img=document.createElement("img"),cap=document.createElement("figcaption");link.href=data.signedUrl;link.target="_blank";link.rel="noopener noreferrer";img.src=data.signedUrl;img.alt=f.name;link.append(img);cap.textContent=f.name.replace(/^[^_]+_/,"");card.append(link,cap);if(editable){const del=document.createElement("button");del.type="button";del.className="small secondary";del.textContent="刪除圖片";del.onclick=async()=>{if(!confirm("確定刪除圖片？"))return;const {error}=await db.storage.from(imageBucket).remove([path]);if(error)alert(error.message);else if(currentProject?.id===projectId)loadImages(projectId,out,true);};card.append(del);}if(out.isConnected&&(!editable||version===imageLoadVersion&&currentProject?.id===projectId&&currentStage==="data"))out.append(card);}if(!files.length&&(!editable||version===imageLoadVersion))out.textContent="尚未上傳圖片。";}catch(e){if(!editable||version===imageLoadVersion)out.textContent="圖片讀取失敗："+e.message;}}
+$("upload-images").onclick=async()=>{if(!currentProject||currentStage!=="data")return;const id=currentProject.id,btn=$("upload-images"),status=$("image-status"),files=[...$("research-image").files];if(!files.length)return;btn.disabled=true;try{const existing=await listImages(id);if(existing.length+files.length>10)throw new Error("每個專題最多10張圖片");for(const f of files){if(!["image/jpeg","image/png","image/webp"].includes(f.type)||f.size>5*1024*1024)throw new Error("僅支援 JPG、PNG、WebP，每張最多5 MB");}for(const f of files){const ext={"image/jpeg":"jpg","image/png":"png","image/webp":"webp"}[f.type];const name=crypto.randomUUID()+"_"+f.name.replace(/[^a-zA-Z0-9._-]/g,"_").slice(0,100)+"."+ext;const {error}=await db.storage.from(imageBucket).upload(id+"/"+name,f,{contentType:f.type,upsert:false});if(error)throw error;}status.textContent="上傳完成";$("research-image").value="";}catch(e){status.textContent="上傳失敗："+e.message;}finally{btn.disabled=false;if(currentProject?.id===id&&currentStage==="data")loadImages(id,$("student-images"),true);}};

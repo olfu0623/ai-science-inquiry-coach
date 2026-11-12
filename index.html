@@ -47,7 +47,7 @@
           <button id="prompt-refresh-classes" type="button" class="small secondary">重新讀取班級</button>
           <label><input type="checkbox" id="prompt-enabled"> 啟用本班自訂指令</label>
           <label>本班共用引導指令<textarea id="prompt-general" rows="5" maxlength="4000" placeholder="例如：先詢問學生觀察到的現象，再引導其辨識變因。"></textarea></label>
-          <label>探究階段<select id="prompt-stage-select"><option value="topic">主題發想</option><option value="question">研究問題</option><option value="hypothesis">科學假設</option><option value="design">實驗設計</option><option value="data">數據分析</option><option value="discussion">討論反思</option></select></label>
+          <label>探究階段<select id="prompt-stage-select"><option value="topic">發現問題</option><option value="design">研究與規劃</option><option value="data">論證與建模</option><option value="discussion">結論反思</option></select></label>
           <label>此階段的補充指令<textarea id="prompt-stage-text" rows="4" maxlength="3000" placeholder="例如：請先要求學生說明自變因與應變因。"></textarea></label>
           <div class="button-row"><button id="prompt-save-btn" type="button">儲存本班 AI 設定</button><button id="prompt-reset-btn" type="button" class="secondary">恢復平台預設（停用自訂）</button></div>
           <p id="prompt-status" class="status"></p>
@@ -102,21 +102,19 @@
             </nav>
             <div id="inquiry-workspace-view">
             <div class="stage-strip" id="stage-strip">
-              <button data-stage="topic" class="stage active">1 主題發想</button>
-              <button data-stage="question" class="stage">2 研究問題</button>
-              <button data-stage="hypothesis" class="stage">3 科學假設</button>
-              <button data-stage="design" class="stage">4 實驗設計</button>
-              <button data-stage="data" class="stage">5 數據分析</button>
-              <button data-stage="discussion" class="stage">6 討論反思</button>
+              <button data-stage="topic" class="stage active">1 發現問題</button>
+<button data-stage="design" class="stage">2 研究與規劃</button>
+<button data-stage="data" class="stage">3 論證與建模</button>
+<button data-stage="discussion" class="stage">4 結論反思</button>
             </div>
             <section class="progress-panel">
-              <div class="progress-top"><strong>探究歷程進度</strong><span id="progress-label">0 / 6 階段完成</span></div>
+              <div class="progress-top"><strong>探究歷程進度</strong><span id="progress-label">0 / 4 階段完成</span></div>
               <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
               <div class="stage-work">
                 <div><strong id="work-title">本階段成果紀錄</strong><span id="stage-status" class="stage-status">尚未開始</span></div>
                 <p id="work-hint">將本階段的重要想法、證據或成果整理在這裡，系統會儲存到你的專題。</p>
-                <textarea id="stage-work" rows="5" placeholder="整理本階段的研究成果……"></textarea>
-                <div class="work-actions"><span id="save-status" class="muted tiny">尚未載入成果</span><div><button id="mark-stage-btn" class="secondary" type="button">標記為已完成</button><button id="save-stage-btn" type="button">儲存成果</button></div></div>
+                <label id="topic-label" class="hidden">主題發想與現象觀察</label><textarea id="stage-work" rows="5" placeholder="整理本階段的研究成果……"></textarea>
+                <div id="discovery-fields" class="hidden"><label>研究問題<textarea id="question-work" rows="4"></textarea></label><label>科學假設<textarea id="hypothesis-work" rows="4"></textarea></label></div><section id="image-panel" class="hidden"><h3>研究圖片與圖表</h3><input id="research-image" type="file" accept="image/jpeg,image/png,image/webp" multiple><button id="upload-images" type="button">上傳圖片</button><p id="image-status" class="status"></p><div id="student-images" class="research-images"></div></section><div class="work-actions"><span id="save-status" class="muted tiny">尚未載入成果</span><div><button id="mark-stage-btn" class="secondary" type="button">標記為已完成</button><button id="save-stage-btn" type="button">儲存成果</button></div></div>
               </div>
             </section>
             <section class="progress-panel feedback-student" aria-label="教師回饋">
