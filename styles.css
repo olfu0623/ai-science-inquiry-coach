@@ -104,3 +104,8 @@ button,input,textarea{font:inherit}button{border:0;border-radius:10px;padding:11
 .class-member-list{list-style:none;padding:0;margin:12px 0}
 .class-member-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}
 .class-member-list li span{min-width:0;overflow-wrap:anywhere}.class-member-list button{flex-shrink:0}
+
+/* Class member removal: outline only. */
+.class-member-list button[data-remove-member] { background: transparent; color: #b42335; border: 1px solid #b42335; }
+.class-member-list button[data-remove-member]:hover:not(:disabled) { background: #fff1f2; filter: none; }
+.class-member-list button[data-remove-member]:focus-visible { outline: 2px solid #b42335; outline-offset: 2px; }
