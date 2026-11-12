@@ -96,3 +96,11 @@ button,input,textarea{font:inherit}button{border:0;border-radius:10px;padding:11
 .ai-rich-text .ai-math-display .katex-display{width:max-content;min-width:100%;text-align:center;}
 .ai-rich-text .katex{overflow-wrap:normal;word-break:normal;}
 @media(max-width:768px){.ai-rich-text .katex{font-size:1em}.ai-rich-text .ai-math-display .katex-display{margin:.4em 0}.ai-rich-text th,.ai-rich-text td{padding:6px 8px}}
+
+/* v3.2.6 class membership */
+.my-classes-summary{flex:1 0 100%;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--muted)}
+#my-classes-list{display:flex;flex-wrap:wrap;gap:6px;min-width:0;max-width:100%}
+.my-class-name{background:#eef3f8;color:#243b53;border-radius:8px;padding:4px 9px;overflow-wrap:anywhere;max-width:100%}
+.class-member-list{list-style:none;padding:0;margin:12px 0}
+.class-member-list li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)}
+.class-member-list li span{min-width:0;overflow-wrap:anywhere}.class-member-list button{flex-shrink:0}

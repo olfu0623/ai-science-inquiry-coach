@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>AI 科學探究教練</title>
-  <link rel="stylesheet" href="./styles.css?v=3.2.4" />
+  <link rel="stylesheet" href="./styles.css?v=3.2.6" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -30,7 +30,7 @@
         <button id="student-mode-btn" class="secondary">我的專題</button>
         <button id="teacher-mode-btn" class="secondary hidden">教師管理</button>
         <button id="join-class-open-btn" class="ghost">加入班級</button>
-        <button id="my-classes-btn" class="ghost" type="button">我的班級</button>
+        <div id="my-classes-summary" class="my-classes-summary" aria-live="polite"><strong>所屬班級：</strong><span id="my-classes-list">讀取中…</span></div>
       </section>
       <section id="teacher-panel" class="teacher-panel hidden">
         <div class="teacher-top"><div><div class="eyebrow">TEACHER DASHBOARD</div><h1>教師管理中心</h1><p class="muted">核准教師可查看自己管理班級的學生專題、階段成果及 AI 對話。</p></div></div>
@@ -160,13 +160,12 @@
     <p class="muted tiny">每行一個 Email，亦可用逗號或分號分隔。加入後可查看學生既有專題與 AI 對話；請確認具有教學及資料使用授權。僅限已驗證 Email 的非教師帳號。</p>
     <button id="email-enroll-submit" type="button">確認加入學生</button><p id="email-enroll-status" class="status" role="status"></p><div id="email-enroll-results" style="max-height:220px;overflow:auto"></div>
   </dialog>
-  <dialog id="my-classes-dialog"><div class="dialog-head"><h2>我的班級</h2><button id="my-classes-close" type="button" class="icon-btn" aria-label="關閉">×</button></div><div id="my-classes-list"></div></dialog>
   <dialog id="join-dialog"><div class="dialog-head"><h2>加入教師班級</h2><button id="join-close-btn" class="icon-btn" type="button" aria-label="關閉">×</button></div>
     <label>班級邀請碼<input id="join-code" maxlength="20" placeholder="教師提供的邀請碼"></label>
     <label>顯示名稱<input id="join-name" maxlength="80" placeholder="教師辨識用姓名或暱稱"></label>
     <p id="join-status" class="status"></p><button id="join-submit-btn" type="button">確認加入</button>
   </dialog>
   <script src="./ai-format-loader.js?v=3.2.4"></script>
-  <script src="./app.js?v=3.2.5"></script>
+  <script src="./app.js?v=3.2.6"></script>
 </body>
 </html>

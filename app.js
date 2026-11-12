@@ -10,6 +10,7 @@ let stageDirty = false, stageSaving = false, autosaveTimer = null;
 let chatHistory=[];
 let approvedTeacherId=null;
 let roleCheckVersion=0;
+let membershipLoadVersion=0, classDetailVersion=0;
 
 const stageNames = {
   topic: ["發現問題","先從你觀察到的現象或感到好奇的事情開始。"],
@@ -34,7 +35,7 @@ const completedCount=rows=>Object.keys(fourGroups).filter(k=>groupDone(rows,k)).
 const fieldId=k=>k==="question"?"question-work":k==="hypothesis"?"hypothesis-work":"stage-work";
 const groupRecord=(rows,k)=>({status:groupDone(rows,k)?"completed":rows.some(r=>groupKeys(k).includes(r.stage)&&r.content)?"in_progress":"not_started",content:groupKeys(k).map(key=>{const r=rows.find(x=>x.stage===key);return k==="topic"?({topic:"主題發想",question:"研究問題",hypothesis:"科學假設"}[key]+"：\n"+(r?.content||"尚無成果紀錄")):r?.content||"";}).join("\n\n")});
 function setStatus(id, msg, error=false){ const el=$(id); el.textContent=msg; el.classList.toggle("error",error); }
-function showApp(on){ if(!on){approvedTeacherId=null;roleCheckVersion++;} $("teacher-mode-btn").classList.add("hidden"); $("auth-panel").classList.toggle("hidden",on); $("app-panel").classList.toggle("hidden",!on); $("class-toolbar").classList.toggle("hidden",!on); $("teacher-panel").classList.add("hidden"); $("logout-btn").classList.toggle("hidden",!on); }
+function showApp(on){ if(!on){approvedTeacherId=null;roleCheckVersion++;membershipLoadVersion++;classDetailVersion++;$("my-classes-list").textContent="";$("teacher-detail").replaceChildren();} $("teacher-mode-btn").classList.add("hidden"); $("auth-panel").classList.toggle("hidden",on); $("app-panel").classList.toggle("hidden",!on); $("class-toolbar").classList.toggle("hidden",!on); $("teacher-panel").classList.add("hidden"); $("logout-btn").classList.toggle("hidden",!on); }
 // AI output is untrusted. Keep stored text intact and render only in the UI.
 const pendingAiFormatting=new Map();
 function renderAiText(el,value){
@@ -101,6 +102,8 @@ async function enterApp(){
   approvedTeacherId=!roleError && approved===true ? userId : null;
   $("teacher-mode-btn").classList.toggle("hidden",approvedTeacherId!==userId);
   if(roleError)console.warn("教師身分確認失敗",roleError.message);
+  await loadMyClasses();
+  if(version!==roleCheckVersion || currentUser?.id!==userId)return;
   await loadProjects();
   if(approvedTeacherId===userId && currentUser?.id===userId)await loadTeacherClasses();
 }
@@ -452,31 +455,49 @@ async function joinTeacherClass(){
  const {data,error}=await db.rpc("join_inquiry_class",{p_code,p_name});
  if(error){setStatus("join-status","加入失敗："+error.message,true);return;}
  setStatus("join-status","已加入「"+(data?.[0]?.class_name||"班級")+"」！");
+ await loadMyClasses();
 }
 async function showTeacherClass(classId){
- const c=teacherClasses.find(x=>x.id===classId);if(!c)return;
+ const c=teacherClasses.find(x=>x.id===classId);if(!c||!currentUser||approvedTeacherId!==currentUser.id)return;
+ const version=++classDetailVersion, user=currentUser.id;
+ const active=()=>version===classDetailVersion&&currentUser?.id===user;
  setTeacherView("students");$("teacher-students-hint").classList.add("hidden");
  const detail=$("teacher-detail");detail.classList.remove("hidden");detail.innerHTML="<p>讀取學生資料中…</p>";
  const {data:members,error}=await db.from("inquiry_class_members").select("student_id,display_name,joined_at").eq("class_id",classId).order("joined_at");
+ if(!active())return;
  if(error){detail.textContent="讀取學生失敗："+error.message;return;}
  const ids=(members||[]).map(m=>m.student_id);
  let projectsForClass=[];
  if(ids.length){const result=await db.from("projects").select("id,user_id,title,description,created_at,updated_at").in("user_id",ids).order("updated_at",{ascending:false});
+   if(!active())return;
    if(result.error){detail.textContent="讀取專題失敗："+result.error.message;return;}projectsForClass=result.data||[];}
  let stages=[];
  if(projectsForClass.length){const result=await db.from("project_stages").select("project_id,stage,status,content").in("project_id",projectsForClass.map(p=>p.id));
+   if(!active())return;
    if(result.error){detail.textContent="讀取進度失敗："+result.error.message;return;}stages=result.data||[];}
  const memberMap=new Map((members||[]).map(m=>[m.student_id,m.display_name]));
  let reviews=[];
  if(projectsForClass.length){const result=await db.from("inquiry_feedback").select("project_id,stage,published,conceptual_reasoning,inquiry_design,evidence_analysis,reflection").eq("teacher_id",currentUser.id).eq("published",true).in("project_id",projectsForClass.map(p=>p.id));
+ if(!active())return;
  if(result.error){teacherMessage("學習分析讀取失敗："+result.error.message,true);}else reviews=result.data||[];}
  const summary=buildClassSummary(members||[],projectsForClass,stages,reviews);
 
  detail.innerHTML=`<h2>${escapeHtml(c.name)} · 學生專題</h2><p class="muted">${ids.length} 位學生，${projectsForClass.length} 個專題。僅供教師檢視，不可修改學生成果。</p>`+
- `<section class="analytics-panel"><h3>班級學生名單</h3><p class="muted tiny">包含尚未建立專題的學生。</p><button type="button" class="small secondary" id="class-enroll-more">Email 加入學生</button><ul>${(members||[]).map(m=>`<li>${escapeHtml(m.display_name)}</li>`).join("")||"<li>尚無學生</li>"}</ul></section><div class="analytics-panel">${summary}</div><section class="analytics-panel" id="research-dashboard"><h3>研究分析與資料匯出</h3><p class="muted">讀取已發布教師評量的歷次快照，按專題比較最早與最新兩次有評分的紀錄。匯出含學生識別資訊，僅供核准的班級教師及授權研究用途。</p><button type="button" id="research-analyze-btn" class="small secondary">分析班級能力變化</button><div id="research-analysis-output"></div><p><button type="button" id="research-full-export" class="small secondary">匯出完整研究 CSV（含學生資訊）</button></p><p id="research-export-status" class="status"></p></section>`+
+ `<section class="analytics-panel"><h3>班級學生名單</h3><p class="muted tiny">包含尚未建立專題的學生。</p><button type="button" class="small secondary" id="class-enroll-more">Email 加入學生</button><p id="member-remove-status" class="status" role="status"></p><ul class="class-member-list">${(members||[]).map(m=>`<li><span>${escapeHtml(m.display_name)}</span><button type="button" class="small danger" data-remove-member="${escapeHtml(m.student_id)}">移除</button></li>`).join("")||"<li>尚無學生</li>"}</ul></section><div class="analytics-panel">${summary}</div><section class="analytics-panel" id="research-dashboard"><h3>研究分析與資料匯出</h3><p class="muted">讀取已發布教師評量的歷次快照，按專題比較最早與最新兩次有評分的紀錄。匯出含學生識別資訊，僅供核准的班級教師及授權研究用途。</p><button type="button" id="research-analyze-btn" class="small secondary">分析班級能力變化</button><div id="research-analysis-output"></div><p><button type="button" id="research-full-export" class="small secondary">匯出完整研究 CSV（含學生資訊）</button></p><p id="research-export-status" class="status"></p></section>`+
  (projectsForClass.length?`<table class="teacher-table"><thead><tr><th>學生</th><th>專題</th><th>完成進度</th><th>最近更新</th><th>操作</th></tr></thead><tbody>`+
  projectsForClass.map(p=>{const n=completedCount(stages.filter(x=>x.project_id===p.id));
  return `<tr><td>${escapeHtml(memberMap.get(p.user_id)||"未命名")}</td><td>${escapeHtml(p.title)}</td><td>${n} / 4</td><td>${new Date(p.updated_at).toLocaleDateString("zh-TW")}</td><td><button class="small secondary" data-inspect="${p.id}">查看成果</button></td></tr>`;}).join("")+`</tbody></table>`:'<p class="muted">目前沒有學生專題。學生加入班級並建立專題後，會顯示在這裡。</p>')+`<div id="teacher-project-output"></div>`;
+ detail.querySelectorAll("[data-remove-member]").forEach(btn=>btn.addEventListener("click",async()=>{
+  if(!active()||approvedTeacherId!==user)return;
+  const student=(members||[]).find(m=>m.student_id===btn.dataset.removeMember);if(!student)return;
+  if(!confirm(`確定將「${student.display_name}」移出「${c.name}」？學生帳號及研究成果會保留。`))return;
+  const buttons=[...detail.querySelectorAll("[data-remove-member]")];buttons.forEach(b=>b.disabled=true);
+  try{const {data,error}=await db.rpc("teacher_remove_class_member",{p_class:classId,p_student:student.student_id});if(error)throw error;
+   if(!active())return;
+   detail.replaceChildren();teacherMessage(data?"已移除學生。":"學生已不在此班級。");await showTeacherClass(classId);
+  }catch(e){if(active())setStatus("member-remove-status","移除失敗："+e.message,true);}
+  finally{buttons.forEach(b=>b.disabled=false);}
+ }));
  detail.querySelector("#class-enroll-more")?.addEventListener("click",()=>openEmailEnrollment(classId));
  detail.querySelector("#research-full-export")?.addEventListener("click",()=>exportClassResearch(classId,c.name,projectsForClass));
  detail.querySelector("#research-analyze-btn")?.addEventListener("click",()=>runClassResearch(classId,projectsForClass));
@@ -841,5 +862,14 @@ $("email-enroll-submit").onclick=async()=>{
  }catch(e){setStatus("email-enroll-status","加入失敗："+e.message,true);}finally{btn.disabled=false;input.disabled=false;$("email-enroll-close").disabled=false;}
 };
 $("email-enroll-dialog").addEventListener("cancel",e=>{if($("email-enroll-submit").disabled)e.preventDefault();});
-$("my-classes-close").onclick=()=>$("my-classes-dialog").close();
-$("my-classes-btn").onclick=async()=>{const out=$("my-classes-list");out.textContent="讀取中…";$("my-classes-dialog").showModal();const user=currentUser?.id;try{const {data,error}=await db.rpc("my_inquiry_classes");if(error)throw error;if(currentUser?.id!==user)return;out.replaceChildren();if(!data?.length)out.textContent="尚未加入班級";else for(const c of data){const p=document.createElement("p");p.textContent=c.class_name;out.append(p);}}catch(e){out.textContent="讀取失敗："+e.message;}};
+async function loadMyClasses(){
+ const user=currentUser?.id, version=++membershipLoadVersion, out=$("my-classes-list");
+ if(!user){out.textContent="";return;}
+ out.textContent="讀取中…";
+ try{const {data,error}=await db.rpc("my_inquiry_classes");if(error)throw error;
+  if(currentUser?.id!==user||version!==membershipLoadVersion)return;
+  out.replaceChildren();if(!data?.length){out.textContent="尚未加入班級";return;}
+  for(const c of data){const span=document.createElement("span");span.className="my-class-name";span.textContent=c.class_name;out.append(span);}
+ }catch(e){if(currentUser?.id===user&&version===membershipLoadVersion)out.textContent="班級讀取失敗，請重新整理";}
+}
+window.addEventListener("focus",()=>{if(currentUser)loadMyClasses();});
